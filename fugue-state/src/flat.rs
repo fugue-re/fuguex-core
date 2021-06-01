@@ -16,13 +16,13 @@ pub enum Error<'space> {
 type Result<'space, T> = std::result::Result<T, Error<'space>>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct State<'space> {
+pub struct FlatState<'space> {
     backing: Vec<u8>,
     dirty: DirtyBacking,
     space: &'space AddressSpace,
 }
 
-impl<'space> State<'space> {
+impl<'space> FlatState<'space> {
     pub fn new(space: &'space AddressSpace, size: usize) -> Self {
         Self {
             backing: vec![0u8; size],
