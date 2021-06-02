@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem::size_of;
 
 use fugue_core::ir::{Address, AddressSpace};
@@ -5,6 +6,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error<'space> {
+    #[error("{access} access violation at {address} of {size} bytes in space `{}`", address.space().name())]
+    AccessViolation { address: Address<'space>, size: usize, access: Access },
     #[error("out-of-bounds read of `{size}` bytes at {address}")]
     OOBRead { address: Address<'space>, size: usize },
     #[error("out-of-bounds write of `{size}` bytes at {address}")]
@@ -19,6 +22,7 @@ type Result<'space, T> = std::result::Result<T, Error<'space>>;
 pub struct FlatState<'space> {
     backing: Vec<u8>,
     dirty: DirtyBacking,
+    permissions: Permissions,
     space: &'space AddressSpace,
 }
 
@@ -27,6 +31,7 @@ impl<'space> FlatState<'space> {
         Self {
             backing: vec![0u8; size],
             dirty: DirtyBacking::new(size),
+            permissions: Permissions::new(size),
             space,
         }
     }
@@ -36,6 +41,7 @@ impl<'space> FlatState<'space> {
         Self {
             backing: bytes,
             dirty: DirtyBacking::new(size),
+            permissions: Permissions::new(size),
             space,
         }
     }
@@ -44,6 +50,7 @@ impl<'space> FlatState<'space> {
         Self {
             backing: self.backing.clone(),
             dirty: self.dirty.fork(),
+            permissions: self.permissions.clone(),
             space: self.space,
         }
     }
@@ -58,6 +65,7 @@ impl<'space> FlatState<'space> {
             self.dirty.bitsmap[block.index()] = 0;
             self.backing[start..real_end].copy_from_slice(&other.backing[start..real_end]);
         }
+        self.permissions = other.permissions.clone();
     }
 
     pub fn copy_bytes(&mut self, from: &Address<'space>, to: &Address<'space>, size: usize) -> Result<()> {
@@ -85,11 +93,27 @@ impl<'space> FlatState<'space> {
             });
         }
 
+        if !self.permissions.all_readable(from, size) {
+            return Err(Error::AccessViolation {
+                address: from.clone(),
+                size,
+                access: Access::Read,
+            })
+        }
+
         if doff > self.len() || doff.checked_add(size).is_none() || doff + size > self.len() {
             return Err(Error::OOBWrite {
                 address: to.clone(),
                 size, // (doff + size) - self.len(),
             });
+        }
+
+        if !self.permissions.all_writable(to, size) {
+            return Err(Error::AccessViolation {
+                address: to.clone(),
+                size,
+                access: Access::Write,
+            })
         }
 
         self.backing.copy_within(soff..(soff + size), doff);
@@ -129,6 +153,14 @@ impl<'space> FlatState<'space> {
             });
         }
 
+        if !self.permissions.all_readable(address, size) {
+            return Err(Error::AccessViolation {
+                address: address.clone(),
+                size,
+                access: Access::Read,
+            })
+        }
+
         let end = end.unwrap();
 
         bytes[..].copy_from_slice(&self.backing[start..end]);
@@ -154,6 +186,14 @@ impl<'space> FlatState<'space> {
             });
         }
 
+        if !self.permissions.all_readable(address, size) {
+            return Err(Error::AccessViolation {
+                address: address.clone(),
+                size,
+                access: Access::Read,
+            })
+        }
+
         let end = end.unwrap();
 
         Ok(&self.backing[start..end])
@@ -175,6 +215,14 @@ impl<'space> FlatState<'space> {
                 address: address.clone(),
                 size,
             });
+        }
+
+        if !self.permissions.all_readable_and_writable(address, size) {
+            return Err(Error::AccessViolation {
+                address: address.clone(),
+                size,
+                access: Access::ReadWrite,
+            })
         }
 
         let end = end.unwrap();
@@ -201,6 +249,14 @@ impl<'space> FlatState<'space> {
                 address: address.clone(),
                 size,
             });
+        }
+
+        if !self.permissions.all_writable(address, size) {
+            return Err(Error::AccessViolation {
+                address: address.clone(),
+                size,
+                access: Access::Write,
+            })
         }
 
         let end = end.unwrap();
@@ -304,6 +360,180 @@ impl DirtyBacking {
 
         for block in sblock..=eblock {
             self.dirty(block);
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum Access {
+    Read,
+    Write,
+    ReadWrite,
+}
+
+impl fmt::Display for Access {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Access::Read => write!(f, "read"),
+            Access::Write => write!(f, "write"),
+            Access::ReadWrite => write!(f, "read/write")
+        }
+    }
+}
+
+impl Access {
+    #[inline]
+    pub fn is_read(&self) -> bool {
+        matches!(self, Access::Read)
+    }
+
+    #[inline]
+    pub fn is_write(&self) -> bool {
+        matches!(self, Access::Write)
+    }
+
+    #[inline]
+    pub fn is_read_write(&self) -> bool {
+        matches!(self, Access::ReadWrite)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Permissions {
+    bitsmap: Vec<u64>,
+}
+
+const PERM_READ_OFF: usize = 1;
+const PERM_WRITE_OFF: usize = 0;
+const PERM_READ_WRITE_OFF: usize = 0;
+
+const PERM_READ_MASK: u64 = 0xAAAAAAAAAAAAAAAA;
+const PERM_WRITE_MASK: u64 = 0x5555555555555555;
+
+const PERM_SCALE: usize = (size_of::<u64>() << 3) >> 1;
+const PERM_SELECT: usize = 1;
+
+impl Permissions {
+    pub fn new(size: usize) -> Self {
+        Self::new_with(size, PERM_READ_MASK | PERM_WRITE_MASK)
+    }
+
+    #[inline]
+    pub fn new_with(size: usize, mask: u64) -> Self {
+        Self {
+            // NOTE: we represent each permission by two bits and set
+            // each byte to readable by default
+            bitsmap: vec![mask; 1 + size / PERM_SCALE],
+        }
+    }
+
+    #[inline]
+    pub fn is_marked<'space>(&self, address: &Address<'space>, access: Access) -> bool {
+        let address = address.offset();
+        let index = (address / PERM_SCALE as u64) as usize;
+        let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
+        let check = if access.is_read_write() {
+            0b11 << (bit + PERM_READ_WRITE_OFF)
+        } else {
+            1 << if access.is_read() {
+                bit + PERM_READ_OFF
+            } else {
+                bit + PERM_WRITE_OFF
+            }
+        };
+
+        self.bitsmap[index] & check == check
+    }
+
+    #[inline]
+    pub fn is_readable<'space>(&self, address: &Address<'space>) -> bool {
+        self.is_marked(address, Access::Read)
+    }
+
+    #[inline]
+    pub fn is_writable<'space>(&self, address: &Address<'space>) -> bool {
+        self.is_marked(address, Access::Write)
+    }
+
+    #[inline]
+    pub fn is_readable_and_writable<'space>(&self, address: &Address<'space>) -> bool {
+        self.is_marked(address, Access::ReadWrite)
+    }
+
+    #[inline]
+    pub fn all_marked<'space>(&self, address: &Address<'space>, size: usize, access: Access) -> bool {
+        let start = address.offset();
+        for addr in start..(start + size as u64) {
+            if !self.is_marked(&Address::new(address.space(), addr), access) {
+                return false
+            }
+        }
+        true
+    }
+
+    #[inline]
+    pub fn all_readable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+        self.all_marked(address, size, Access::Read)
+    }
+
+    #[inline]
+    pub fn all_writable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+        self.all_marked(address, size, Access::Write)
+    }
+
+    #[inline]
+    pub fn all_readable_and_writable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+        self.all_marked(address, size, Access::ReadWrite)
+    }
+
+    #[inline]
+    pub fn clear_byte<'space>(&mut self, address: &Address<'space>, access: Access) {
+        let address = address.offset();
+        let index = (address / PERM_SCALE as u64) as usize;
+        let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
+        let check = if access.is_read_write() {
+            0b11 << (bit + PERM_READ_WRITE_OFF)
+        } else {
+            1 << if access.is_read() {
+                bit + PERM_READ_OFF
+            } else {
+                bit + PERM_WRITE_OFF
+            }
+        };
+        self.bitsmap[index] &= !check;
+    }
+
+    #[inline]
+    pub fn set_byte<'space>(&mut self, address: &Address<'space>, access: Access) {
+        let address = address.offset();
+        let index = (address / PERM_SCALE as u64) as usize;
+        let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
+        let check = if access.is_read_write() {
+            0b11 << (bit + PERM_READ_WRITE_OFF)
+        } else {
+            1 << if access.is_read() {
+                bit + PERM_READ_OFF
+            } else {
+                bit + PERM_WRITE_OFF
+            }
+        };
+
+        self.bitsmap[index] |= check;
+    }
+
+    #[inline]
+    pub fn clear_region<'space>(&mut self, address: &Address<'space>, size: usize, access: Access) {
+        let start = address.offset();
+        for addr in start..(start + size as u64) {
+            self.clear_byte(&Address::new(address.space(), addr), access);
+        }
+    }
+
+    #[inline]
+    pub fn set_region<'space>(&mut self, address: &Address<'space>, size: usize, access: Access) {
+        let start = address.offset();
+        for addr in start..(start + size as u64) {
+            self.set_byte(&Address::new(address.space(), addr), access);
         }
     }
 }
