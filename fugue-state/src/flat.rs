@@ -1,22 +1,22 @@
 use std::fmt;
 use std::mem::size_of;
 
-use fugue_core::ir::{Address, AddressSpace};
+use fugue::ir::IntoAddress;
+use fugue::ir::{Address, AddressSpace};
+
+use crate::traits::State;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error<'space> {
-    #[error("{access} access violation at {address} of {size} bytes in space `{}`", address.space().name())]
+    #[error("{access} access violation at {address} of {size} bytes in `{}` space", address.space().name())]
     AccessViolation { address: Address<'space>, size: usize, access: Access },
     #[error("out-of-bounds read of `{size}` bytes at {address}")]
     OOBRead { address: Address<'space>, size: usize },
     #[error("out-of-bounds write of `{size}` bytes at {address}")]
     OOBWrite { address: Address<'space>, size: usize },
-    #[error("address {address} of space `{}` cannot be dereferenced in `{}`", address.space().name(), space.name())]
-    InvalidAddress { address: Address<'space>, space: &'space AddressSpace },
 }
-
-type Result<'space, T> = std::result::Result<T, Error<'space>>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FlatState<'space> {
@@ -26,12 +26,35 @@ pub struct FlatState<'space> {
     space: &'space AddressSpace,
 }
 
+impl<'space> AsRef<Self> for FlatState<'space> {
+    #[inline(always)]
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl<'space> AsMut<Self> for FlatState<'space> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
 impl<'space> FlatState<'space> {
     pub fn new(space: &'space AddressSpace, size: usize) -> Self {
         Self {
             backing: vec![0u8; size],
             dirty: DirtyBacking::new(size),
             permissions: Permissions::new(size),
+            space,
+        }
+    }
+
+    pub fn read_only(space: &'space AddressSpace, size: usize) -> Self {
+        Self {
+            backing: vec![0u8; size],
+            dirty: DirtyBacking::new(size),
+            permissions: Permissions::new_with(size, PERM_READ_MASK),
             space,
         }
     }
@@ -46,7 +69,19 @@ impl<'space> FlatState<'space> {
         }
     }
 
-    pub fn fork(&self) -> Self {
+    pub fn permissions(&self) -> &Permissions {
+        &self.permissions
+    }
+
+    pub fn permissions_mut(&mut self) -> &mut Permissions {
+        &mut self.permissions
+    }
+}
+
+impl<'space> State for FlatState<'space> {
+    type Error = Error<'space>;
+
+    fn fork(&self) -> Self {
         Self {
             backing: self.backing.clone(),
             dirty: self.dirty.fork(),
@@ -55,7 +90,7 @@ impl<'space> FlatState<'space> {
         }
     }
 
-    pub fn restore(&mut self, other: &Self) {
+    fn restore(&mut self, other: &Self) {
         for block in &self.dirty.indices {
             let start = block.start_address(self.space).offset() as usize;
             let end = block.end_address(self.space).offset() as usize;
@@ -68,20 +103,11 @@ impl<'space> FlatState<'space> {
         self.permissions = other.permissions.clone();
     }
 
-    pub fn copy_bytes(&mut self, from: &Address<'space>, to: &Address<'space>, size: usize) -> Result<()> {
-        if self.space != from.space() {
-            return Err(Error::InvalidAddress {
-                address: from.clone(),
-                space: self.space,
-            })
-        }
-
-        if self.space != to.space() {
-            return Err(Error::InvalidAddress {
-                address: to.clone(),
-                space: self.space,
-            })
-        }
+    fn copy_bytes<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    where F: IntoAddress,
+          T: IntoAddress {
+        let from = from.into_address(self.space);
+        let to = to.into_address(self.space);
 
         let soff = from.offset() as usize;
         let doff = to.offset() as usize;
@@ -93,7 +119,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_readable(from, size) {
+        if !self.permissions.all_readable(&from, size) {
             return Err(Error::AccessViolation {
                 address: from.clone(),
                 size,
@@ -108,7 +134,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_writable(to, size) {
+        if !self.permissions.all_writable(&to, size) {
             return Err(Error::AccessViolation {
                 address: to.clone(),
                 size,
@@ -117,31 +143,14 @@ impl<'space> FlatState<'space> {
         }
 
         self.backing.copy_within(soff..(soff + size), doff);
-
-        /*
-        unsafe {
-            use std::ptr;
-
-            let src_ptr = self.backing.as_ptr().offset(usize::from(from) as isize);
-            let dst_ptr = self.backing.as_mut_ptr().offset(usize::from(to) as isize);
-
-            ptr::copy(src_ptr, dst_ptr, size)
-        }
-        */
-
-        self.dirty.dirty_region(to, size);
+        self.dirty.dirty_region(&to, size);
 
         Ok(())
     }
 
-    pub fn get_bytes(&self, address: &Address<'space>, bytes: &mut [u8]) -> Result<()> {
-        if self.space != address.space() {
-            return Err(Error::InvalidAddress {
-                address: address.clone(),
-                space: self.space,
-            })
-        }
-
+    fn get_bytes<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
+    where A: IntoAddress {
+        let address = address.into_address(self.space);
         let size = bytes.len();
         let start = address.offset() as usize;
         let end = start.checked_add(size);
@@ -153,7 +162,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_readable(address, size) {
+        if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
                 address: address.clone(),
                 size,
@@ -168,14 +177,9 @@ impl<'space> FlatState<'space> {
         Ok(())
     }
 
-    pub fn view_bytes(&self, address: &Address<'space>, size: usize) -> Result<&[u8]> {
-        if self.space != address.space() {
-            return Err(Error::InvalidAddress {
-                address: address.clone(),
-                space: self.space,
-            })
-        }
-
+    fn view_bytes<A>(&self, address: A, size: usize) -> Result<&[u8], Error<'space>>
+    where A: IntoAddress {
+        let address = address.into_address(self.space);
         let start = address.offset() as usize;
         let end = start.checked_add(size);
 
@@ -186,7 +190,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_readable(address, size) {
+        if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
                 address: address.clone(),
                 size,
@@ -199,14 +203,9 @@ impl<'space> FlatState<'space> {
         Ok(&self.backing[start..end])
     }
 
-    pub fn view_bytes_mut(&mut self, address: &Address<'space>, size: usize) -> Result<&mut [u8]> {
-        if self.space != address.space() {
-            return Err(Error::InvalidAddress {
-                address: address.clone(),
-                space: self.space,
-            })
-        }
-
+    fn view_bytes_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [u8], Error<'space>>
+    where A: IntoAddress {
+        let address = address.into_address(self.space);
         let start = address.offset() as usize;
         let end = start.checked_add(size);
 
@@ -217,7 +216,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_readable_and_writable(address, size) {
+        if !self.permissions.all_readable_and_writable(&address, size) {
             return Err(Error::AccessViolation {
                 address: address.clone(),
                 size,
@@ -227,19 +226,14 @@ impl<'space> FlatState<'space> {
 
         let end = end.unwrap();
 
-        self.dirty.dirty_region(address, size);
+        self.dirty.dirty_region(&address, size);
 
         Ok(&mut self.backing[start..end])
     }
 
-    pub fn set_bytes<A>(&mut self, address: &Address<'space>, bytes: &[u8]) -> Result<()> {
-        if self.space != address.space() {
-            return Err(Error::InvalidAddress {
-                address: address.clone(),
-                space: self.space,
-            })
-        }
-
+    fn set_bytes<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
+    where A: IntoAddress {
+        let address = address.into_address(self.space);
         let size = bytes.len();
         let start = address.offset() as usize;
         let end = start.checked_add(size);
@@ -251,7 +245,7 @@ impl<'space> FlatState<'space> {
             });
         }
 
-        if !self.permissions.all_writable(address, size) {
+        if !self.permissions.all_writable(&address, size) {
             return Err(Error::AccessViolation {
                 address: address.clone(),
                 size,
@@ -262,12 +256,12 @@ impl<'space> FlatState<'space> {
         let end = end.unwrap();
 
         self.backing[start..end].copy_from_slice(bytes);
-        self.dirty.dirty_region(address, size);
+        self.dirty.dirty_region(&address, size);
 
         Ok(())
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.backing.len()
     }
 }
