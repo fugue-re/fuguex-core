@@ -76,6 +76,10 @@ impl<'space, T: StateValue> FlatState<'space, T> {
     pub fn permissions_mut(&mut self) -> &mut Permissions {
         &mut self.permissions
     }
+
+    pub fn address_space(&self) -> &'space AddressSpace {
+        self.space
+    }
 }
 
 impl<'space, V: StateValue> State for FlatState<'space, V> {
