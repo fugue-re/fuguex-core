@@ -3,7 +3,6 @@ use interval_tree::{IntervalTree, Interval, Entry};
 
 use std::iter::FromIterator;
 use std::ops::Range;
-use std::ptr;
 use std::mem::take;
 
 use thiserror::Error;
@@ -314,16 +313,13 @@ impl<'space, V: StateValue> State for PagedState<'space, V> {
         let from = from.into_address(self.inner.address_space());
         let to = to.into_address(self.inner.address_space());
 
-        // this avoids messy logic; it is inherently safe since we
-        // perform bounds checks on everything prior to the unsafe
-        // copy.
+        // TODO: can we avoid the intermediate allocation?
 
-        let from_view = self.view_values(from, size)?.as_ptr();
-        let into_view = self.view_values_mut(to, size)?.as_mut_ptr();
+        let vals = self.view_values(from, size)?.to_vec();
+        let view = self.view_values_mut(to, size)?;
 
-        unsafe {
-            todo!("FIXME")
-            //ptr::copy(from_view, into_view, size);
+        for (d, s) in view.iter_mut().zip(vals.into_iter()) {
+            *d = s;
         }
 
         Ok(())
