@@ -72,19 +72,16 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
         &mut self.temporaries
     }
 
-    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand<'space>) -> Result<V, Error<'space>> {
+    pub fn with_operand_values<F, O>(&self, operand: &Operand<'space>, f: F) -> Result<O, Error<'space>>
+    where F: FnOnce(&[T]) -> O {
         match operand {
             Operand::Address { value, size } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-
                 self.memory()
                     .view_values(*value, *size)
                     .map_err(Error::Memory)
-                    .map(V::from_values)
+                    .map(f)
             },
             Operand::Constant { value, size, .. } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-
                 // max size of value
                 let mut values: [T; 8] = Default::default();
 
@@ -96,55 +93,56 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
                     *d = T::from_byte(*s);
                 }
 
-                Ok(V::from_values(&values[..*size]))
+                Ok(f(&values[..*size]))
             },
             Operand::Register { offset, size, .. } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-
                 self.registers()
                     .view_values(*offset, *size)
                     .map_err(Error::Register)
-                    .map(V::from_values)
+                    .map(f)
             },
             Operand::Variable { offset, size, .. } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-
                 self.temporaries()
                     .view_values(*offset, *size)
                     .map_err(Error::Temporary)
-                    .map(V::from_values)
+                    .map(f)
             },
         }
     }
 
-    pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand<'space>, value: V) -> Result<(), Error<'space>> {
+    pub fn with_operand_values_mut<F, O>(&mut self, operand: &Operand<'space>, f: F) -> Result<O, Error<'space>>
+    where F: FnOnce(&mut [T]) -> O {
         match operand {
-            Operand::Address { value: address, size } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-                let view = self.memory_mut()
-                    .view_values_mut(*address, *size)
-                    .map_err(Error::Memory)?;
-                value.into_values(view);
+            Operand::Address { value, size } => {
+                self.memory_mut()
+                    .view_values_mut(*value, *size)
+                    .map_err(Error::Memory)
+                    .map(f)
             },
             Operand::Register { offset, size, .. } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-                let view = self.registers_mut()
+                self.registers_mut()
                     .view_values_mut(*offset, *size)
-                    .map_err(Error::Register)?;
-                value.into_values(view);
+                    .map_err(Error::Register)
+                    .map(f)
             },
             Operand::Variable { offset, size, .. } => {
-                assert_eq!(*size, std::mem::size_of::<V>());
-                let view = self.temporaries_mut()
+                self.temporaries_mut()
                     .view_values_mut(*offset, *size)
-                    .map_err(Error::Temporary)?;
-                value.into_values(view);
+                    .map_err(Error::Temporary)
+                    .map(f)
             },
             Operand::Constant { .. } => {
-                panic!("cannot assign to Operand::Constant");
-            }
+                panic!("cannot mutate Operand::Constant");
+            },
         }
-        Ok(())
+    }
+
+    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand<'space>) -> Result<V, Error<'space>> {
+        self.with_operand_values(operand, |values| V::from_values(values))
+    }
+
+    pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand<'space>, value: V) -> Result<(), Error<'space>> {
+        self.with_operand_values_mut(operand, |values| value.into_values(values))
     }
 }
 
