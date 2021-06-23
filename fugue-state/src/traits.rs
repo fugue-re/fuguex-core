@@ -2,9 +2,12 @@ use fugue::ir::address::IntoAddress;
 
 pub use fugue_state_derive::AsState;
 
+pub trait StateValue: Clone + Default + Send + Sync { }
+impl<V> StateValue for V where V: Clone + Default + Send + Sync { }
+
 pub trait State: Clone + Send + Sync {
     type Error: std::error::Error + Send + Sync;
-    type Value: Clone + Send + Sync;
+    type Value: StateValue;
 
     fn fork(&self) -> Self;
     fn restore(&mut self, other: &Self);

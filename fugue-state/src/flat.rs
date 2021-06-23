@@ -4,7 +4,7 @@ use std::mem::size_of;
 use fugue::ir::IntoAddress;
 use fugue::ir::{Address, AddressSpace};
 
-use crate::traits::State;
+use crate::traits::{State, StateValue};
 
 use thiserror::Error;
 
@@ -19,31 +19,31 @@ pub enum Error<'space> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct FlatState<'space> {
-    backing: Vec<u8>,
+pub struct FlatState<'space, T: StateValue> {
+    backing: Vec<T>,
     dirty: DirtyBacking,
     permissions: Permissions,
     space: &'space AddressSpace,
 }
 
-impl<'space> AsRef<Self> for FlatState<'space> {
+impl<'space, T: StateValue> AsRef<Self> for FlatState<'space, T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space> AsMut<Self> for FlatState<'space> {
+impl<'space, T: StateValue> AsMut<Self> for FlatState<'space, T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space> FlatState<'space> {
+impl<'space, T: StateValue> FlatState<'space, T> {
     pub fn new(space: &'space AddressSpace, size: usize) -> Self {
         Self {
-            backing: vec![0u8; size],
+            backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
             permissions: Permissions::new(size),
             space,
@@ -52,17 +52,17 @@ impl<'space> FlatState<'space> {
 
     pub fn read_only(space: &'space AddressSpace, size: usize) -> Self {
         Self {
-            backing: vec![0u8; size],
+            backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
             permissions: Permissions::new_with(size, PERM_READ_MASK),
             space,
         }
     }
 
-    pub fn from_vec(space: &'space AddressSpace, bytes: Vec<u8>) -> Self {
-        let size = bytes.len();
+    pub fn from_vec(space: &'space AddressSpace, values: Vec<T>) -> Self {
+        let size = values.len();
         Self {
-            backing: bytes,
+            backing: values,
             dirty: DirtyBacking::new(size),
             permissions: Permissions::new(size),
             space,
@@ -78,9 +78,9 @@ impl<'space> FlatState<'space> {
     }
 }
 
-impl<'space> State for FlatState<'space> {
+impl<'space, V: StateValue> State for FlatState<'space, V> {
     type Error = Error<'space>;
-    type Value = u8;
+    type Value = V;
 
     fn fork(&self) -> Self {
         Self {
@@ -99,7 +99,7 @@ impl<'space> State for FlatState<'space> {
             let real_end = self.backing.len().min(end);
 
             self.dirty.bitsmap[block.index()] = 0;
-            self.backing[start..real_end].copy_from_slice(&other.backing[start..real_end]);
+            self.backing[start..real_end].clone_from_slice(&other.backing[start..real_end]);
         }
         self.permissions = other.permissions.clone();
     }
@@ -147,23 +147,52 @@ impl<'space> State for FlatState<'space> {
             })
         }
 
-        self.backing.copy_within(soff..(soff + size), doff);
+        if doff == soff {
+            return Ok(())
+        }
+
+        if doff >= soff + size {
+            let (shalf, dhalf) = self.backing.split_at_mut(doff);
+            dhalf.clone_from_slice(&shalf[soff..(soff + size)]);
+        } else if doff + size <= soff {
+            let (dhalf, shalf) = self.backing.split_at_mut(soff);
+            dhalf[doff..(doff+size)].clone_from_slice(&shalf);
+        } else { // overlap; TODO: see if we can avoid superfluous clones
+            if doff < soff {
+                for i in 0..size {
+                    unsafe {
+                        let dptr = self.backing.as_mut_ptr().add(doff + i);
+                        let sptr = self.backing.as_ptr().add(soff + i);
+                        (&mut *dptr).clone_from(&*sptr);
+                    }
+                }
+            } else {
+                for i in (0..size).rev() {
+                    unsafe {
+                        let dptr = self.backing.as_mut_ptr().add(doff + i);
+                        let sptr = self.backing.as_ptr().add(soff + i);
+                        (&mut *dptr).clone_from(&*sptr);
+                    }
+                }
+            }
+        }
+
         self.dirty.dirty_region(&to, size);
 
         Ok(())
     }
 
-    fn get_values<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
-        let size = bytes.len();
+        let size = values.len();
         let start = address.offset() as usize;
         let end = start.checked_add(size);
 
         if start > self.len() || end.is_none() || end.unwrap() > self.len() {
             return Err(Error::OOBRead {
                 address: address.clone(),
-                size: bytes.len(),
+                size: values.len(),
             });
         }
 
@@ -177,12 +206,12 @@ impl<'space> State for FlatState<'space> {
 
         let end = end.unwrap();
 
-        bytes[..].copy_from_slice(&self.backing[start..end]);
+        values[..].clone_from_slice(&self.backing[start..end]);
 
         Ok(())
     }
 
-    fn view_values<A>(&self, address: A, size: usize) -> Result<&[u8], Error<'space>>
+    fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let start = address.offset() as usize;
@@ -208,7 +237,7 @@ impl<'space> State for FlatState<'space> {
         Ok(&self.backing[start..end])
     }
 
-    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [u8], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let start = address.offset() as usize;
@@ -236,10 +265,10 @@ impl<'space> State for FlatState<'space> {
         Ok(&mut self.backing[start..end])
     }
 
-    fn set_values<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
-        let size = bytes.len();
+        let size = values.len();
         let start = address.offset() as usize;
         let end = start.checked_add(size);
 
@@ -260,7 +289,7 @@ impl<'space> State for FlatState<'space> {
 
         let end = end.unwrap();
 
-        self.backing[start..end].copy_from_slice(bytes);
+        self.backing[start..end].clone_from_slice(values);
         self.dirty.dirty_region(&address, size);
 
         Ok(())

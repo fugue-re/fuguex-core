@@ -5,7 +5,7 @@ use interval_tree::IntervalSet;
 use thiserror::Error;
 
 use crate::flat::{self, Access, FlatState};
-use crate::traits::State;
+use crate::traits::{State, StateValue};
 
 #[derive(Debug, Error)]
 pub enum Error<'space> {
@@ -44,7 +44,6 @@ impl<'space> Error<'space> {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 enum ChunkStatus {
     Taken { offset: usize, size: usize },
     Free { offset: usize, size: usize },
@@ -217,43 +216,43 @@ impl ChunkList {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChunkState<'space> {
+pub struct ChunkState<'space, T: StateValue> {
     base_address: Address<'space>,
     chunks: ChunkList,
     regions: IntervalSet<Address<'space>>,
-    backing: FlatState<'space>,
+    backing: FlatState<'space, T>,
     space: &'space AddressSpace,
 }
 
-impl<'space> AsRef<Self> for ChunkState<'space> {
+impl<'space, T: StateValue> AsRef<Self> for ChunkState<'space, T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space> AsMut<Self> for ChunkState<'space> {
+impl<'space, T: StateValue> AsMut<Self> for ChunkState<'space, T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space> AsRef<FlatState<'space>> for ChunkState<'space> {
+impl<'space, T: StateValue> AsRef<FlatState<'space, T>> for ChunkState<'space, T> {
     #[inline(always)]
-    fn as_ref(&self) -> &FlatState<'space> {
+    fn as_ref(&self) -> &FlatState<'space, T> {
         &self.backing
     }
 }
 
-impl<'space> AsMut<FlatState<'space>> for ChunkState<'space> {
+impl<'space, T: StateValue> AsMut<FlatState<'space, T>> for ChunkState<'space, T> {
     #[inline(always)]
-    fn as_mut(&mut self) -> &mut FlatState<'space> {
+    fn as_mut(&mut self) -> &mut FlatState<'space, T> {
         &mut self.backing
     }
 }
 
-impl<'space> ChunkState<'space> {
+impl<'space, T: StateValue> ChunkState<'space, T> {
     pub fn new<A>(space: &'space AddressSpace, base_address: A, size: usize) -> Self
     where A: IntoAddress {
         Self {
@@ -269,11 +268,11 @@ impl<'space> ChunkState<'space> {
         self.base_address
     }
 
-    pub fn inner(&self) -> &FlatState<'space> {
+    pub fn inner(&self) -> &FlatState<'space, T> {
         &self.backing
     }
 
-    pub fn inner_mut(&mut self) -> &mut FlatState<'space> {
+    pub fn inner_mut(&mut self) -> &mut FlatState<'space, T> {
         &mut self.backing
     }
 
@@ -283,7 +282,7 @@ impl<'space> ChunkState<'space> {
 
     #[inline]
     pub fn allocate_with<F>(&mut self, size: usize, f: F) -> Result<Address<'space>, Error<'space>>
-    where F: FnOnce(Address<'space>, &mut [u8]) {
+    where F: FnOnce(Address<'space>, &mut [T]) {
         // we allocate +1 on size to mark the last part as a red-zone
         let offset = self.chunks.allocate(size + 1)
             .ok_or_else(|| Error::NotEnoughFreeSpace(size))?;
@@ -307,7 +306,7 @@ impl<'space> ChunkState<'space> {
         Ok(address)
     }
 
-    pub fn reallocate<A>(&mut self, address: A, size: usize) -> Result<Address, Error<'space>>
+    pub fn reallocate<A>(&mut self, address: A, size: usize) -> Result<Address<'space>, Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let region = self.regions.find(&address)
@@ -402,9 +401,9 @@ impl<'space> ChunkState<'space> {
     }
 }
 
-impl<'space> State for ChunkState<'space> {
+impl<'space, V: StateValue> State for ChunkState<'space, V> {
     type Error = Error<'space>;
-    type Value = u8;
+    type Value = V;
 
     fn fork(&self) -> Self {
         Self {
@@ -437,16 +436,16 @@ impl<'space> State for ChunkState<'space> {
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn get_values<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error<'space>>
     where A: IntoAddress {
-        let size = bytes.len();
+        let size = values.len();
         let address = self.translate_checked(address, size)?;
 
-        self.backing.get_values(address, bytes)
+        self.backing.get_values(address, values)
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_values<A>(&self, address: A, n: usize) -> Result<&[u8], Error<'space>>
+    fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error<'space>>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
 
@@ -454,7 +453,7 @@ impl<'space> State for ChunkState<'space> {
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [u8], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error<'space>>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
         let base_address = self.base_address;
@@ -463,12 +462,12 @@ impl<'space> State for ChunkState<'space> {
             .map_err(|e| Error::backing(base_address, e))
     }
 
-    fn set_values<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error<'space>>
     where A: IntoAddress {
-        let size = bytes.len();
+        let size = values.len();
         let address = self.translate_checked(address, size)?;
 
-        self.backing.set_values(address, bytes)
+        self.backing.set_values(address, values)
             .map_err(|e| Error::backing(self.base_address, e))
     }
 }

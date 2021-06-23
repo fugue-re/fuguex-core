@@ -2,65 +2,66 @@ use std::ops::{Deref, DerefMut};
 
 use fugue::ir::{IntoAddress, Translator};
 
-use crate::{State, flat::FlatState};
+use crate::{State, StateValue};
+use crate::flat::FlatState;
 
 pub use crate::flat::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-pub struct RegisterState<'space>(FlatState<'space>);
+pub struct RegisterState<'space, T: StateValue>(FlatState<'space, T>);
 
-impl<'space> AsRef<Self> for RegisterState<'space> {
+impl<'space, T: StateValue> AsRef<Self> for RegisterState<'space, T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space> AsMut<Self> for RegisterState<'space> {
+impl<'space, T: StateValue> AsMut<Self> for RegisterState<'space, T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space> AsRef<FlatState<'space>> for RegisterState<'space> {
+impl<'space, T: StateValue> AsRef<FlatState<'space, T>> for RegisterState<'space, T> {
     #[inline(always)]
-    fn as_ref(&self) -> &FlatState<'space> {
+    fn as_ref(&self) -> &FlatState<'space, T> {
         &self.0
     }
 }
 
-impl<'space> AsMut<FlatState<'space>> for RegisterState<'space> {
+impl<'space, T: StateValue> AsMut<FlatState<'space, T>> for RegisterState<'space, T> {
     #[inline(always)]
-    fn as_mut(&mut self) -> &mut FlatState<'space> {
+    fn as_mut(&mut self) -> &mut FlatState<'space, T> {
         &mut self.0
     }
 }
 
-impl<'space> Deref for RegisterState<'space> {
-    type Target = FlatState<'space>;
+impl<'space, T: StateValue> Deref for RegisterState<'space, T> {
+    type Target = FlatState<'space, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'space> DerefMut for RegisterState<'space> {
+impl<'space, T: StateValue> DerefMut for RegisterState<'space, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'space> From<RegisterState<'space>> for FlatState<'space> {
-    fn from(t: RegisterState<'space>) -> Self {
+impl<'space, T: StateValue> From<RegisterState<'space, T>> for FlatState<'space, T> {
+    fn from(t: RegisterState<'space, T>) -> Self {
         t.0
     }
 }
 
-impl<'space> State for RegisterState<'space> {
+impl<'space, V: StateValue> State for RegisterState<'space, V> {
     type Error = Error<'space>;
-    type Value = u8;
+    type Value = V;
 
     #[inline(always)]
     fn fork(&self) -> Self {
@@ -109,7 +110,7 @@ impl<'space> State for RegisterState<'space> {
     }
 }
 
-impl<'space> RegisterState<'space> {
+impl<'space, T: StateValue> RegisterState<'space, T> {
     pub fn new(translator: &'space Translator) -> Self {
         let space = translator.manager().register_space();
         let size = translator.register_space_size();

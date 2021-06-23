@@ -3,65 +3,65 @@ use std::ops::{Deref, DerefMut};
 use fugue::ir::{IntoAddress, Translator};
 
 use crate::flat::FlatState;
-use crate::traits::State;
+use crate::traits::{State, StateValue};
 
 pub use crate::flat::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-pub struct UniqueState<'space>(FlatState<'space>);
+pub struct UniqueState<'space, T: StateValue>(FlatState<'space, T>);
 
-impl<'space> AsRef<Self> for UniqueState<'space> {
+impl<'space, T: StateValue> AsRef<Self> for UniqueState<'space, T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space> AsMut<Self> for UniqueState<'space> {
+impl<'space, T: StateValue> AsMut<Self> for UniqueState<'space, T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space> AsRef<FlatState<'space>> for UniqueState<'space> {
+impl<'space, T: StateValue> AsRef<FlatState<'space, T>> for UniqueState<'space, T> {
     #[inline(always)]
-    fn as_ref(&self) -> &FlatState<'space> {
+    fn as_ref(&self) -> &FlatState<'space, T> {
         &self.0
     }
 }
 
-impl<'space> AsMut<FlatState<'space>> for UniqueState<'space> {
+impl<'space, T: StateValue> AsMut<FlatState<'space, T>> for UniqueState<'space, T> {
     #[inline(always)]
-    fn as_mut(&mut self) -> &mut FlatState<'space> {
+    fn as_mut(&mut self) -> &mut FlatState<'space, T> {
         &mut self.0
     }
 }
 
-impl<'space> Deref for UniqueState<'space> {
-    type Target = FlatState<'space>;
+impl<'space, T: StateValue> Deref for UniqueState<'space, T> {
+    type Target = FlatState<'space, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'space> DerefMut for UniqueState<'space> {
+impl<'space, T: StateValue> DerefMut for UniqueState<'space, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'space> From<UniqueState<'space>> for FlatState<'space> {
-    fn from(t: UniqueState<'space>) -> Self {
+impl<'space, T: StateValue> From<UniqueState<'space, T>> for FlatState<'space, T> {
+    fn from(t: UniqueState<'space, T>) -> Self {
         t.0
     }
 }
 
-impl<'space> State for UniqueState<'space> {
+impl<'space, V: StateValue> State for UniqueState<'space, V> {
     type Error = Error<'space>;
-    type Value = u8;
+    type Value = V;
 
     #[inline(always)]
     fn fork(&self) -> Self {
@@ -110,7 +110,7 @@ impl<'space> State for UniqueState<'space> {
     }
 }
 
-impl<'space> UniqueState<'space> {
+impl<'space, T: StateValue> UniqueState<'space, T> {
     pub fn new(translator: &'space Translator) -> Self {
         let space = translator.manager().unique_space();
         let size = translator.unique_space_size();
