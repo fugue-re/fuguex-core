@@ -148,6 +148,20 @@ pub struct PagedState<'space, T: StateValue> {
     inner: FlatState<'space, T>,
 }
 
+impl<'space, T: StateValue> AsRef<Self> for PagedState<'space, T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl<'space, T: StateValue> AsMut<Self> for PagedState<'space, T> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
 impl<'space, T: StateValue> PagedState<'space, T> {
     pub fn from_parts(
         mapping: impl IntoIterator<Item = (Range<Address<'space>>, Segment<'space, T>)>,

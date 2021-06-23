@@ -2,8 +2,24 @@ use fugue::ir::address::IntoAddress;
 
 pub use fugue_state_derive::AsState;
 
-pub trait StateValue: Clone + Default + Send + Sync { }
-impl<V> StateValue for V where V: Clone + Default + Send + Sync { }
+pub trait StateValue: Clone + Default + Send + Sync {
+    fn from_byte(value: u8) -> Self;
+}
+
+impl<V> StateValue for V where V: Clone + Default + Send + Sync + From<u8> {
+    #[inline(always)]
+    fn from_byte(value: u8) -> Self {
+        Self::from(value)
+    }
+}
+
+pub trait FromStateValues<V: StateValue>: Sized {
+    fn from_values(values: &[V]) -> Self;
+}
+
+pub trait IntoStateValues<V: StateValue>: Sized {
+    fn into_values(self, values: &mut [V]);
+}
 
 pub trait State: Clone + Send + Sync {
     type Error: std::error::Error + Send + Sync;
