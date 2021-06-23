@@ -299,7 +299,7 @@ impl<'space> ChunkState<'space> {
         self.regions.insert(address..=(address + size - 1usize), ());
 
         // get a mutable view over the backing
-        let view = self.backing.view_bytes_mut(offset, size)
+        let view = self.backing.view_values_mut(offset, size)
             .map_err(Error::Backing)?;
 
         f(address, view);
@@ -339,7 +339,7 @@ impl<'space> ChunkState<'space> {
 
         // copy if moved
         if old_offset != offset.into_address(self.space) {
-            self.backing.copy_bytes(old_offset, offset, old_size.into())
+            self.backing.copy_values(old_offset, offset, old_size.into())
                 .map_err(Error::Backing)?;
 
             self.backing.permissions_mut()
@@ -404,6 +404,7 @@ impl<'space> ChunkState<'space> {
 
 impl<'space> State for ChunkState<'space> {
     type Error = Error<'space>;
+    type Value = u8;
 
     fn fork(&self) -> Self {
         Self {
@@ -422,52 +423,52 @@ impl<'space> State for ChunkState<'space> {
         self.backing.restore(&other.backing);
     }
 
-    fn copy_bytes<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    fn len(&self) -> usize {
+        self.backing.len()
+    }
+
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
     where F: IntoAddress,
           T: IntoAddress {
         let from = self.translate_checked(from, size)?;
         let to = self.translate_checked(to, size)?;
 
-        self.backing.copy_bytes(from, to, size)
+        self.backing.copy_values(from, to, size)
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn get_bytes<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let size = bytes.len();
         let address = self.translate_checked(address, size)?;
 
-        self.backing.get_bytes(address, bytes)
+        self.backing.get_values(address, bytes)
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_bytes<A>(&self, address: A, n: usize) -> Result<&[u8], Error<'space>>
+    fn view_values<A>(&self, address: A, n: usize) -> Result<&[u8], Error<'space>>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
 
-        self.backing.view_bytes(address, n)
+        self.backing.view_values(address, n)
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_bytes_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [u8], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [u8], Error<'space>>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
         let base_address = self.base_address;
 
-        self.backing.view_bytes_mut(address, n)
+        self.backing.view_values_mut(address, n)
             .map_err(|e| Error::backing(base_address, e))
     }
 
-    fn set_bytes<A>(&mut self, address: &Address<'space>, bytes: &[u8]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let size = bytes.len();
         let address = self.translate_checked(address, size)?;
 
-        self.backing.set_bytes(address, bytes)
+        self.backing.set_values(address, bytes)
             .map_err(|e| Error::backing(self.base_address, e))
-    }
-
-    fn len(&self) -> usize {
-        self.backing.len()
     }
 }

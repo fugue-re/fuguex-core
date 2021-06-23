@@ -1,31 +1,31 @@
-use fugue::ir::Address;
 use fugue::ir::address::IntoAddress;
 
 pub use fugue_state_derive::AsState;
 
-pub trait State: Clone + Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
+pub trait State: Clone + Send + Sync {
+    type Error: std::error::Error + Send + Sync;
+    type Value: Clone + Send + Sync;
 
     fn fork(&self) -> Self;
     fn restore(&mut self, other: &Self);
 
-    fn copy_bytes<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
+    fn len(&self) -> usize;
+
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
     where F: IntoAddress,
           T: IntoAddress;
 
-    fn get_bytes<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Self::Error>
+    fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
     where A: IntoAddress;
 
-    fn view_bytes<A>(&self, address: A, size: usize) -> Result<&[u8], Self::Error>
+    fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
     where A: IntoAddress;
 
-    fn view_bytes_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [u8], Self::Error>
+    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
     where A: IntoAddress;
 
-    fn set_bytes<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Self::Error>
+    fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
     where A: IntoAddress;
-
-    fn len(&self) -> usize;
 }
 
 pub trait AsState<S>: State {

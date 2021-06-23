@@ -80,6 +80,7 @@ impl<'space> FlatState<'space> {
 
 impl<'space> State for FlatState<'space> {
     type Error = Error<'space>;
+    type Value = u8;
 
     fn fork(&self) -> Self {
         Self {
@@ -103,7 +104,11 @@ impl<'space> State for FlatState<'space> {
         self.permissions = other.permissions.clone();
     }
 
-    fn copy_bytes<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    fn len(&self) -> usize {
+        self.backing.len()
+    }
+
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
     where F: IntoAddress,
           T: IntoAddress {
         let from = from.into_address(self.space);
@@ -148,7 +153,7 @@ impl<'space> State for FlatState<'space> {
         Ok(())
     }
 
-    fn get_bytes<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, bytes: &mut [u8]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let size = bytes.len();
@@ -177,7 +182,7 @@ impl<'space> State for FlatState<'space> {
         Ok(())
     }
 
-    fn view_bytes<A>(&self, address: A, size: usize) -> Result<&[u8], Error<'space>>
+    fn view_values<A>(&self, address: A, size: usize) -> Result<&[u8], Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let start = address.offset() as usize;
@@ -203,7 +208,7 @@ impl<'space> State for FlatState<'space> {
         Ok(&self.backing[start..end])
     }
 
-    fn view_bytes_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [u8], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [u8], Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let start = address.offset() as usize;
@@ -231,7 +236,7 @@ impl<'space> State for FlatState<'space> {
         Ok(&mut self.backing[start..end])
     }
 
-    fn set_bytes<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, bytes: &[u8]) -> Result<(), Error<'space>>
     where A: IntoAddress {
         let address = address.into_address(self.space);
         let size = bytes.len();
@@ -259,10 +264,6 @@ impl<'space> State for FlatState<'space> {
         self.dirty.dirty_region(&address, size);
 
         Ok(())
-    }
-
-    fn len(&self) -> usize {
-        self.backing.len()
     }
 }
 

@@ -1,8 +1,8 @@
 use std::ops::{Deref, DerefMut};
 
-use fugue::ir::Translator;
+use fugue::ir::{IntoAddress, Translator};
 
-use crate::flat::FlatState;
+use crate::{State, flat::FlatState};
 
 pub use crate::flat::Error;
 
@@ -31,10 +31,10 @@ impl<'space> AsRef<FlatState<'space>> for RegisterState<'space> {
     }
 }
 
-impl<'space> AsRef<FlatState<'space>> for RegisterState<'space> {
+impl<'space> AsMut<FlatState<'space>> for RegisterState<'space> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut FlatState<'space> {
-        &mut self
+        &mut self.0
     }
 }
 
@@ -55,6 +55,57 @@ impl<'space> DerefMut for RegisterState<'space> {
 impl<'space> From<RegisterState<'space>> for FlatState<'space> {
     fn from(t: RegisterState<'space>) -> Self {
         t.0
+    }
+}
+
+impl<'space> State for RegisterState<'space> {
+    type Error = Error<'space>;
+    type Value = u8;
+
+    #[inline(always)]
+    fn fork(&self) -> Self {
+        Self(self.0.fork())
+    }
+
+    #[inline(always)]
+    fn restore(&mut self, other: &Self) {
+        self.0.restore(&other.0)
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline(always)]
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
+    where F: IntoAddress,
+          T: IntoAddress {
+        self.0.copy_values(from, to, size)
+    }
+
+    #[inline(always)]
+    fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
+    where A: IntoAddress {
+        self.0.get_values(address, bytes)
+    }
+
+    #[inline(always)]
+    fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
+    where A: IntoAddress {
+        self.0.view_values(address, size)
+    }
+
+    #[inline(always)]
+    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
+    where A: IntoAddress {
+        self.0.view_values_mut(address, size)
+    }
+
+    #[inline(always)]
+    fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
+    where A: IntoAddress {
+        self.0.set_values(address, bytes)
     }
 }
 
