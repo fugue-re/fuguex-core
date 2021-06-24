@@ -1,3 +1,7 @@
+use std::marker::PhantomData;
+
+use fugue::bytes::Order;
+
 use fugue::ir::il::pcode::Operand;
 use fugue::ir::{IntoAddress, Translator};
 
@@ -21,30 +25,32 @@ pub enum Error<'space> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PCodeState<'space, T: StateValue> {
+pub struct PCodeState<'space, T: StateValue, O: Order> {
     memory: PagedState<'space, T>,
     registers: RegisterState<'space, T>,
     temporaries: UniqueState<'space, T>,
+    marker: PhantomData<O>,
 }
 
-impl<'space, T: StateValue> AsRef<Self> for PCodeState<'space, T> {
+impl<'space, T: StateValue, O: Order> AsRef<Self> for PCodeState<'space, T, O> {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsMut<Self> for PCodeState<'space, T> {
+impl<'space, T: StateValue, O: Order> AsMut<Self> for PCodeState<'space, T, O> {
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue> PCodeState<'space, T> {
+impl<'space, T: StateValue, O: Order> PCodeState<'space, T, O> {
     pub fn new(memory: PagedState<'space, T>, translator: &'space Translator) -> Self {
         Self {
             memory,
             registers: RegisterState::new(translator),
             temporaries: UniqueState::new(translator),
+            marker: PhantomData,
         }
     }
 
@@ -72,8 +78,8 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
         &mut self.temporaries
     }
 
-    pub fn with_operand_values<F, O>(&self, operand: &Operand<'space>, f: F) -> Result<O, Error<'space>>
-    where F: FnOnce(&[T]) -> O {
+    pub fn with_operand_values<U, F>(&self, operand: &Operand<'space>, f: F) -> Result<U, Error<'space>>
+    where F: FnOnce(&[T]) -> U {
         match operand {
             Operand::Address { value, size } => {
                 self.memory()
@@ -85,12 +91,14 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
                 // max size of value
                 let mut values: [T; 8] = Default::default();
 
-                assert_eq!(std::mem::size_of_val(&values), std::mem::size_of_val(value));
-
-                let bytes = value.to_ne_bytes();
-
-                for (d, s) in values[..*size].iter_mut().zip(bytes[..*size].iter()) {
-                    *d = T::from_byte(*s);
+                if O::ENDIAN.is_big() {
+                    for (d, s) in values[..*size].iter_mut().zip(&value.to_be_bytes()[8-*size..]) {
+                        *d = T::from_byte(*s);
+                    }
+                } else {
+                    for (d, s) in values[..*size].iter_mut().zip(&value.to_le_bytes()[..*size]) {
+                        *d = T::from_byte(*s);
+                    }
                 }
 
                 Ok(f(&values[..*size]))
@@ -110,8 +118,8 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
         }
     }
 
-    pub fn with_operand_values_mut<F, O>(&mut self, operand: &Operand<'space>, f: F) -> Result<O, Error<'space>>
-    where F: FnOnce(&mut [T]) -> O {
+    pub fn with_operand_values_mut<U, F>(&mut self, operand: &Operand<'space>, f: F) -> Result<U, Error<'space>>
+    where F: FnOnce(&mut [T]) -> U {
         match operand {
             Operand::Address { value, size } => {
                 self.memory_mut()
@@ -138,15 +146,15 @@ impl<'space, T: StateValue> PCodeState<'space, T> {
     }
 
     pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand<'space>) -> Result<V, Error<'space>> {
-        self.with_operand_values(operand, |values| V::from_values(values))
+        self.with_operand_values(operand, |values| V::from_values::<O>(values))
     }
 
     pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand<'space>, value: V) -> Result<(), Error<'space>> {
-        self.with_operand_values_mut(operand, |values| value.into_values(values))
+        self.with_operand_values_mut(operand, |values| value.into_values::<O>(values))
     }
 }
 
-impl<'space, V: StateValue> State for PCodeState<'space, V> {
+impl<'space, V: StateValue, O: Order> State for PCodeState<'space, V, O> {
     type Error = Error<'space>;
     type Value = V;
 
@@ -155,6 +163,7 @@ impl<'space, V: StateValue> State for PCodeState<'space, V> {
             registers: self.registers.fork(),
             temporaries: self.temporaries.fork(),
             memory: self.memory.fork(),
+            marker: self.marker,
         }
     }
 

@@ -1,11 +1,11 @@
 [package]
-name = "fugue-state"
+name = "fuguex-state"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 
 [dependencies]
 fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
-fugue-state-derive = { path = "../fugue-state-derive" }
+fuguex-state-derive = { path = "../fuguex-state-derive" }
 interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree" }
 thiserror = "1"

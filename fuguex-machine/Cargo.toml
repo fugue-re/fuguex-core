@@ -1,0 +1,9 @@
+[package]
+name = "fuguex-machine"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+fugue = { git = "ssh://git@simulacra.to:10022/fugue/fugue-core" }
+fuguex-state = { path = "../fuguex-state" }
+thiserror = "1"

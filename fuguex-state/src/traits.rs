@@ -1,6 +1,9 @@
+use fugue::bytes::Order;
+use fugue::bytes::traits::ByteCast;
+
 use fugue::ir::address::IntoAddress;
 
-pub use fugue_state_derive::AsState;
+pub use fuguex_state_derive::AsState;
 
 pub trait StateValue: Clone + Default + Send + Sync {
     fn from_byte(value: u8) -> Self;
@@ -14,11 +17,25 @@ impl<V> StateValue for V where V: Clone + Default + Send + Sync + From<u8> {
 }
 
 pub trait FromStateValues<V: StateValue>: Sized {
-    fn from_values(values: &[V]) -> Self;
+    fn from_values<O: Order>(values: &[V]) -> Self;
 }
 
 pub trait IntoStateValues<V: StateValue>: Sized {
-    fn into_values(self, values: &mut [V]);
+    fn into_values<O: Order>(self, values: &mut [V]);
+}
+
+impl<T> FromStateValues<u8> for T where T: ByteCast {
+    #[inline(always)]
+    fn from_values<O: Order>(values: &[u8]) -> Self {
+        Self::from_bytes::<O>(values)
+    }
+}
+
+impl<T> IntoStateValues<u8> for T where T: ByteCast {
+    #[inline(always)]
+    fn into_values<O: Order>(self, values: &mut [u8]) {
+        self.into_bytes::<O>(values)
+    }
 }
 
 pub trait State: Clone + Send + Sync {
