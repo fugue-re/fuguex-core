@@ -12,21 +12,21 @@ use crate::flat::{self, FlatState};
 use crate::traits::{State, StateValue};
 
 #[derive(Debug, Error)]
-pub enum Error<'space> {
+pub enum Error {
     #[error("unmapped virtual address at {address}")]
-    UnmappedAddress { address: Address<'space>, size: usize },
+    UnmappedAddress { address: Address, size: usize },
     #[error("overlapped access from {address} byte access at {size}")]
-    OverlappedAccess { address: Address<'space>, size: usize },
+    OverlappedAccess { address: Address, size: usize },
     #[error("overlapped mapping of {size} bytes from {address}")]
-    OverlappedMapping { address: Address<'space>, size: usize },
+    OverlappedMapping { address: Address, size: usize },
     #[error(transparent)]
-    Backing(flat::Error<'space>),
+    Backing(flat::Error),
     #[error(transparent)]
-    Chunked(chunked::Error<'space>),
+    Chunked(chunked::Error),
 }
 
-impl<'space> Error<'space> {
-    fn backing(base: Address<'space>, e: flat::Error<'space>) -> Self {
+impl Error {
+    fn backing(base: Address, e: flat::Error) -> Self {
         Self::Backing(match e {
             flat::Error::OOBRead { address, size } => flat::Error::OOBRead {
                 address: address + base,
@@ -46,12 +46,12 @@ impl<'space> Error<'space> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Segment<'space, T: StateValue> {
+pub enum Segment<T: StateValue> {
     Static { name: String, offset: usize },
-    Mapping { name: String, backing: ChunkState<'space, T> },
+    Mapping { name: String, backing: ChunkState<T> },
 }
 
-impl<'space, T: StateValue> Segment<'space, T> {
+impl<T: StateValue> Segment<T> {
     pub fn new<S: AsRef<str>>(name: S, offset: usize) -> Self {
         Self::Static {
             name: name.as_ref().to_string(),
@@ -59,7 +59,7 @@ impl<'space, T: StateValue> Segment<'space, T> {
         }
     }
 
-    pub fn mapping<S: AsRef<str>>(name: S, mapping: ChunkState<'space, T>) -> Self {
+    pub fn mapping<S: AsRef<str>>(name: S, mapping: ChunkState<T>) -> Self {
         Self::Mapping {
             name: name.as_ref().to_string(),
             backing: mapping,
@@ -74,7 +74,7 @@ impl<'space, T: StateValue> Segment<'space, T> {
         matches!(self, Self::Mapping { .. })
     }
 
-    pub fn as_mapping(&self) -> Option<&ChunkState<'space, T>> {
+    pub fn as_mapping(&self) -> Option<&ChunkState<T>> {
         if let Self::Mapping { ref backing, .. } = self {
             Some(backing)
         } else {
@@ -82,7 +82,7 @@ impl<'space, T: StateValue> Segment<'space, T> {
         }
     }
 
-    pub fn as_mapping_mut(&mut self) -> Option<&mut ChunkState<'space, T>> {
+    pub fn as_mapping_mut(&mut self) -> Option<&mut ChunkState<T>> {
         if let Self::Mapping { ref mut backing, .. } = self {
             Some(backing)
         } else {
@@ -143,29 +143,29 @@ impl<'space, T: StateValue> Segment<'space, T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PagedState<'space, T: StateValue> {
-    segments: IntervalTree<Address<'space>, Segment<'space, T>>,
-    inner: FlatState<'space, T>,
+pub struct PagedState<T: StateValue> {
+    segments: IntervalTree<Address, Segment<T>>,
+    inner: FlatState<T>,
 }
 
-impl<'space, T: StateValue> AsRef<Self> for PagedState<'space, T> {
+impl<T: StateValue> AsRef<Self> for PagedState<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsMut<Self> for PagedState<'space, T> {
+impl<T: StateValue> AsMut<Self> for PagedState<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue> PagedState<'space, T> {
+impl<T: StateValue> PagedState<T> {
     pub fn from_parts(
-        mapping: impl IntoIterator<Item = (Range<Address<'space>>, Segment<'space, T>)>,
-        backing: FlatState<'space, T>,
+        mapping: impl IntoIterator<Item = (Range<Address>, Segment<T>)>,
+        backing: FlatState<T>,
     ) -> Self {
         Self {
             segments: IntervalTree::from_iter(mapping.into_iter().map(|(r, s)| {
@@ -175,10 +175,10 @@ impl<'space, T: StateValue> PagedState<'space, T> {
         }
     }
 
-    pub fn mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error<'space>>
+    pub fn mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
     where S: AsRef<str>,
           A: IntoAddress {
-        let base_address = base_address.into_address(self.inner.address_space());
+        let base_address = base_address.into_address(self.inner.address_space().as_ref());
         let range = base_address..=(base_address + size - 1usize); // TODO: error for zero-size
 
         if self.segments.overlaps(range.clone()) {
@@ -192,11 +192,11 @@ impl<'space, T: StateValue> PagedState<'space, T> {
         Ok(())
     }
 
-    pub fn segments(&self) -> &IntervalTree<Address<'space>, Segment<'space, T>> {
+    pub fn segments(&self) -> &IntervalTree<Address, Segment<T>> {
         &self.segments
     }
 
-    pub fn mappings(&self) -> impl Iterator<Item=&ChunkState<'space, T>> {
+    pub fn mappings(&self) -> impl Iterator<Item=&ChunkState<T>> {
         self.segments.values().filter_map(|v| if let Segment::Mapping { backing, .. } = v {
             Some(backing)
         } else {
@@ -204,34 +204,34 @@ impl<'space, T: StateValue> PagedState<'space, T> {
         })
     }
 
-    pub fn mapping_for<A>(&self, address: A) -> Option<&ChunkState<'space, T>>
+    pub fn mapping_for<A>(&self, address: A) -> Option<&ChunkState<T>>
     where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         self.segments.find(address)
             .and_then(|e| e.value().as_mapping())
     }
 
-    pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<&mut ChunkState<'space, T>>
+    pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<&mut ChunkState<T>>
     where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         self.segments.find_mut(address)
             .and_then(|e| e.into_value().as_mapping_mut())
     }
 
-    pub fn inner(&self) -> &FlatState<'space, T> {
+    pub fn inner(&self) -> &FlatState<T> {
         &self.inner
     }
 
-    pub fn inner_mut(&mut self) -> &mut FlatState<'space, T> {
+    pub fn inner_mut(&mut self) -> &mut FlatState<T> {
         &mut self.inner
     }
 }
 
-impl<'space, T: StateValue> PagedState<'space, T> {
-    pub fn with_flat<'a, A, F, O: 'a>(&'a self, address: A, access_size: usize, f: F) -> Result<O, Error<'space>>
+impl<T: StateValue> PagedState<T> {
+    pub fn with_flat<'a, A, F, O: 'a>(&'a self, address: A, access_size: usize, f: F) -> Result<O, Error>
     where A: IntoAddress,
-          F: FnOnce(&'a FlatState<'space, T>, Address<'space>, usize) -> Result<O, Error<'space>> {
-        let address = address.into_address(self.inner.address_space());
+          F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
+        let address = address.into_address(self.inner.address_space().as_ref());
         if let Some(principal) = self.segments.find(&address) {
             if address + access_size - 1usize > *principal.interval().end() { // FIXME: checked arith.
                 return Err(Error::OverlappedAccess {
@@ -244,11 +244,11 @@ impl<'space, T: StateValue> PagedState<'space, T> {
                 Segment::Mapping { ref backing, .. } => {
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner(), translated.into_address(self.inner.address_space()), access_size)
+                    f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
                 },
                 Segment::Static { offset, .. } => {
                     let address = (address - *principal.interval().start()) + *offset;
-                    f(&self.inner, address.into_address(self.inner.address_space()), access_size)
+                    f(&self.inner, address.into_address(self.inner.address_space().as_ref()), access_size)
                 },
             }
         } else {
@@ -256,11 +256,11 @@ impl<'space, T: StateValue> PagedState<'space, T> {
         }
     }
 
-    pub fn with_flat_mut<'a, A, F, O: 'a>(&'a mut self, address: A, access_size: usize, f: F) -> Result<O, Error<'space>>
+    pub fn with_flat_mut<'a, A, F, O: 'a>(&'a mut self, address: A, access_size: usize, f: F) -> Result<O, Error>
     where A: IntoAddress,
-          F: FnOnce(&'a mut FlatState<'space, T>, Address<'space>, usize) -> Result<O, Error<'space>> {
+          F: FnOnce(&'a mut FlatState<T>, Address, usize) -> Result<O, Error> {
         let space = self.inner.address_space();
-        let address = address.into_address(space);
+        let address = address.into_address(space.as_ref());
         if let Some(principal) = self.segments.find_mut(&address) {
             let interval = principal.interval();
             if address + access_size - 1usize > *interval.end() {
@@ -273,11 +273,11 @@ impl<'space, T: StateValue> PagedState<'space, T> {
                 Segment::Mapping { ref mut backing, .. } => {
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner_mut(), translated.into_address(space), access_size)
+                    f(backing.inner_mut(), translated.into_address(space.as_ref()), access_size)
                 },
                 Segment::Static { offset, .. } => {
                     let address = (address - *interval.start()) + *offset;
-                    f(&mut self.inner, address.into_address(space), access_size)
+                    f(&mut self.inner, address.into_address(space.as_ref()), access_size)
                 }
             }
         } else {
@@ -285,17 +285,17 @@ impl<'space, T: StateValue> PagedState<'space, T> {
         }
     }
 
-    pub fn segment_bounds<A>(&self, address: A) -> Result<Entry<Address<'space>, Segment<'space, T>>, Error<'space>>
+    pub fn segment_bounds<A>(&self, address: A) -> Result<Entry<Address, Segment<T>>, Error>
     where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         self.segments
             .find(&address)
             .ok_or_else(|| Error::UnmappedAddress { address, size: 1usize })
     }
 }
 
-impl<'space, V: StateValue> State for PagedState<'space, V> {
-    type Error = Error<'space>;
+impl<V: StateValue> State for PagedState<V> {
+    type Error = Error;
     type Value = V;
 
     fn fork(&self) -> Self {
@@ -319,13 +319,13 @@ impl<'space, V: StateValue> State for PagedState<'space, V> {
             .collect();
     }
 
-    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error>
     where
         F: IntoAddress,
         T: IntoAddress,
     {
-        let from = from.into_address(self.inner.address_space());
-        let to = to.into_address(self.inner.address_space());
+        let from = from.into_address(self.inner.address_space().as_ref());
+        let to = to.into_address(self.inner.address_space().as_ref());
 
         // TODO: can we avoid the intermediate allocation?
 
@@ -339,11 +339,11 @@ impl<'space, V: StateValue> State for PagedState<'space, V> {
         Ok(())
     }
 
-    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error>
     where
         A: IntoAddress,
     {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         let n = values.len();
 
         self.with_flat(address, n, |inner, address, _size| {
@@ -351,31 +351,31 @@ impl<'space, V: StateValue> State for PagedState<'space, V> {
         })
     }
 
-    fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error<'space>>
+    fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error>
     where
         A: IntoAddress,
     {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         self.with_flat(address, n, |inner, address, n| {
             inner.view_values(address, n).map_err(|e| Error::backing(address, e))
         })
     }
 
-    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error>
     where
         A: IntoAddress,
     {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         self.with_flat_mut(address, n, |inner, address, n| {
             inner.view_values_mut(address, n).map_err(|e| Error::backing(address, e))
         })
     }
 
-    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error>
     where
         A: IntoAddress,
     {
-        let address = address.into_address(self.inner.address_space());
+        let address = address.into_address(self.inner.address_space().as_ref());
         let n = values.len();
         self.with_flat_mut(address, n, |inner, address, _size| {
             inner.set_values(address, values).map_err(|e| Error::backing(address, e))

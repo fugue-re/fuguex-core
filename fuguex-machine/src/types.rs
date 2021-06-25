@@ -1,83 +1,83 @@
-use std::marker::PhantomData;
-
-use fugue::ir::{Address, AddressSpace, IntoAddress};
+use fugue::ir::{AddressSpace, AddressValue, IntoAddress};
 use fugue::ir::il::pcode::{PCode, PCodeOp};
 
-pub enum Bound<'space, A: IntoAddress + 'space> {
+use std::sync::Arc;
+
+pub enum Bound<A: IntoAddress> {
     Address(A),
-    Steps(usize, PhantomData<&'space ()>),
-    Unbounded(PhantomData<&'space ()>),
+    Steps(usize),
+    Unbounded,
 }
 
-impl<'space, A> Bound<'space, A> where A: IntoAddress + 'space {
-    pub fn address(address: A) -> Bound<'space, A> {
+impl<A> Bound<A> where A: IntoAddress {
+    pub fn address(address: A) -> Bound<A> {
         Self::Address(address)
     }
 
-    pub fn in_space(self, space: &'space AddressSpace) -> Bound<'space, Address<'space>> {
+    pub fn in_space(self, space: Arc<AddressSpace>) -> Bound<AddressValue> {
         match self {
-            Self::Address(address) => Bound::Address(address.into_address(space)),
-            Self::Steps(steps, _) => Bound::Steps(steps, PhantomData),
-            Self::Unbounded(_) => Bound::Unbounded(PhantomData),
+            Self::Address(address) => Bound::Address(address.into_address_value(space)),
+            Self::Steps(steps) => Bound::Steps(steps),
+            Self::Unbounded => Bound::Unbounded,
         }
     }
 }
 
-impl<'space> Bound<'space, Address<'space>> {
-    pub fn steps(steps: usize) -> Bound<'space, Address<'space>> {
-        Self::Steps(steps, PhantomData)
+impl Bound<AddressValue> {
+    pub fn steps(steps: usize) -> Bound<AddressValue> {
+        Self::Steps(steps)
     }
 
-    pub fn unbounded() -> Bound<'space, Address<'space>> {
-        Self::Unbounded(PhantomData)
+    pub fn unbounded() -> Bound<AddressValue> {
+        Self::Unbounded
     }
 
     pub fn deplete(self) -> Self {
-        if let Self::Steps(steps, m) = self {
-            Self::Steps(steps.checked_sub(1).unwrap_or(0), m)
+        if let Self::Steps(steps) = self {
+            Self::Steps(steps.checked_sub(1).unwrap_or(0))
         } else {
             self
         }
     }
 
     pub fn reached<A>(&self, address: A) -> bool
-    where A: IntoAddress + 'space {
+    where A: IntoAddress  {
         match self {
-            Self::Address(ref target) => *target == address.into_address(target.space()),
-            Self::Steps(steps, _) => *steps == 0,
-            Self::Unbounded(_) => false,
+            Self::Address(ref target) => *target == address.into_address_value(target.space()),
+            Self::Steps(steps) => *steps == 0,
+            Self::Unbounded => false,
         }
     }
 }
 
-pub enum Branch<'space> {
+pub enum Branch {
     Next,
     Local(isize),
-    Global(Address<'space>),
+    Global(AddressValue),
 }
 
-pub enum Outcome<'space> {
+pub enum Outcome {
     Halt,
-    Branch(Branch<'space>),
+    Branch(Branch),
 }
 
-pub enum StepOutcome<'space> {
+pub enum StepOutcome {
     Halt,
-    Branch(Address<'space>),
+    Branch(AddressValue),
 }
 
-pub struct StepState<'space> {
-    pcode: PCode<'space>,
+pub struct StepState {
+    pcode: PCode,
     position: usize,
 }
 
-pub enum BranchOutcome<'space> {
+pub enum BranchOutcome {
     Local,
-    Global(Address<'space>),
+    Global(AddressValue),
 }
 
-impl<'space> From<PCode<'space>> for StepState<'space> {
-    fn from(pcode: PCode<'space>) -> Self {
+impl From<PCode> for StepState {
+    fn from(pcode: PCode) -> Self {
         Self {
             pcode,
             position: 0,
@@ -85,22 +85,22 @@ impl<'space> From<PCode<'space>> for StepState<'space> {
     }
 }
 
-impl<'space> StepState<'space> {
+impl StepState {
     #[inline(always)]
-    pub fn address(&self) -> Address<'space> {
+    pub fn address(&self) -> AddressValue {
         self.pcode.address()
     }
 
     #[inline(always)]
-    pub fn current(&self) -> Option<&PCodeOp<'space>> {
+    pub fn current(&self) -> Option<&PCodeOp> {
         self.pcode.operations().get(self.position)
     }
 
-    pub fn fallthrough(&self) -> Address<'space> {
+    pub fn fallthrough(&self) -> AddressValue {
         self.address() + self.pcode.length()
     }
 
-    pub fn branch(&mut self, action: &Branch<'space>) -> BranchOutcome<'space> {
+    pub fn branch(&mut self, action: &Branch) -> BranchOutcome {
         match action {
             Branch::Next => {
                 self.position += 1;
@@ -118,7 +118,7 @@ impl<'space> StepState<'space> {
                 }
             },
             Branch::Global(address) => {
-                return BranchOutcome::Global(*address)
+                return BranchOutcome::Global(address.clone())
             }
         }
 

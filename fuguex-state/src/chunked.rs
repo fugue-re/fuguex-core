@@ -1,30 +1,31 @@
-use fugue::ir::{Address, AddressSpace};
+use fugue::ir::{Address, AddressSpace, AddressValue};
 use fugue::ir::address::IntoAddress;
 
 use interval_tree::IntervalSet;
+use std::sync::Arc;
 use thiserror::Error;
 
 use crate::flat::{self, Access, FlatState};
 use crate::traits::{State, StateValue};
 
 #[derive(Debug, Error)]
-pub enum Error<'space> {
+pub enum Error {
     #[error(transparent)]
-    Backing(flat::Error<'space>),
+    Backing(flat::Error),
     #[error("not enough free space to allocate {0} bytes")]
     NotEnoughFreeSpace(usize),
     #[error("attempt to access unmanaged region of `{size}` bytes at {address}")]
-    AccessUnmanaged { address: Address<'space>, size: usize },
+    AccessUnmanaged { address: Address, size: usize },
     #[error("attempt to free unmanaged region at {0}")]
-    FreeUnmanaged(Address<'space>),
+    FreeUnmanaged(Address),
     #[error("attempt to reallocate unmanaged region at {0}")]
-    ReallocateUnmanaged(Address<'space>),
+    ReallocateUnmanaged(Address),
     #[error("access at {address} of `{size}` bytes spans multiple allocations")]
-    HeapOverflow { address: Address<'space>, size: usize },
+    HeapOverflow { address: Address, size: usize },
 }
 
-impl<'space> Error<'space> {
-    fn backing(base: Address<'space>, e: flat::Error<'space>) -> Self {
+impl Error {
+    fn backing(base: Address, e: flat::Error) -> Self {
         Self::Backing(match e {
             flat::Error::OOBRead { address, size } => flat::Error::OOBRead {
                 address: address + base,
@@ -216,73 +217,73 @@ impl ChunkList {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChunkState<'space, T: StateValue> {
-    base_address: Address<'space>,
+pub struct ChunkState<T: StateValue> {
+    base_address: Address,
     chunks: ChunkList,
-    regions: IntervalSet<Address<'space>>,
-    backing: FlatState<'space, T>,
-    space: &'space AddressSpace,
+    regions: IntervalSet<Address>,
+    backing: FlatState<T>,
+    space: Arc<AddressSpace>,
 }
 
-impl<'space, T: StateValue> AsRef<Self> for ChunkState<'space, T> {
+impl<T: StateValue> AsRef<Self> for ChunkState<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsMut<Self> for ChunkState<'space, T> {
+impl<T: StateValue> AsMut<Self> for ChunkState<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsRef<FlatState<'space, T>> for ChunkState<'space, T> {
+impl<T: StateValue> AsRef<FlatState<T>> for ChunkState<T> {
     #[inline(always)]
-    fn as_ref(&self) -> &FlatState<'space, T> {
+    fn as_ref(&self) -> &FlatState<T> {
         &self.backing
     }
 }
 
-impl<'space, T: StateValue> AsMut<FlatState<'space, T>> for ChunkState<'space, T> {
+impl<T: StateValue> AsMut<FlatState<T>> for ChunkState<T> {
     #[inline(always)]
-    fn as_mut(&mut self) -> &mut FlatState<'space, T> {
+    fn as_mut(&mut self) -> &mut FlatState<T> {
         &mut self.backing
     }
 }
 
-impl<'space, T: StateValue> ChunkState<'space, T> {
-    pub fn new<A>(space: &'space AddressSpace, base_address: A, size: usize) -> Self
+impl<T: StateValue> ChunkState<T> {
+    pub fn new<A>(space: Arc<AddressSpace>, base_address: A, size: usize) -> Self
     where A: IntoAddress {
         Self {
-            base_address: base_address.into_address(space),
+            base_address: base_address.into_address(space.as_ref()),
             chunks: ChunkList::new(size),
             regions: IntervalSet::new(),
-            backing: FlatState::read_only(space, size),
+            backing: FlatState::read_only(space.clone(), size),
             space,
         }
     }
 
-    pub fn base_address(&self) -> Address<'space> {
+    pub fn base_address(&self) -> Address {
         self.base_address
     }
 
-    pub fn inner(&self) -> &FlatState<'space, T> {
+    pub fn inner(&self) -> &FlatState<T> {
         &self.backing
     }
 
-    pub fn inner_mut(&mut self) -> &mut FlatState<'space, T> {
+    pub fn inner_mut(&mut self) -> &mut FlatState<T> {
         &mut self.backing
     }
 
-    pub fn allocate(&mut self, size: usize) -> Result<Address<'space>, Error<'space>> {
+    pub fn allocate(&mut self, size: usize) -> Result<Address, Error> {
         self.allocate_with(size, |_, _| ())
     }
 
     #[inline]
-    pub fn allocate_with<F>(&mut self, size: usize, f: F) -> Result<Address<'space>, Error<'space>>
-    where F: FnOnce(Address<'space>, &mut [T]) {
+    pub fn allocate_with<F>(&mut self, size: usize, f: F) -> Result<Address, Error>
+    where F: FnOnce(Address, &mut [T]) {
         // we allocate +1 on size to mark the last part as a red-zone
         let offset = self.chunks.allocate(size + 1)
             .ok_or_else(|| Error::NotEnoughFreeSpace(size))?;
@@ -290,9 +291,9 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
 
         // set R/W permissions
         self.backing.permissions_mut()
-            .set_region(&offset.into_address(self.space), size, Access::ReadWrite);
+            .set_region(&offset.into_address(self.space.as_ref()), size, Access::ReadWrite);
         self.backing.permissions_mut()
-            .clear_byte(&(offset.into_address(self.space) + size), Access::Write);
+            .clear_byte(&(offset.into_address(self.space.as_ref()) + size), Access::Write);
 
         // update region mappings
         self.regions.insert(address..=(address + size - 1usize), ());
@@ -306,9 +307,9 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
         Ok(address)
     }
 
-    pub fn reallocate<A>(&mut self, address: A, size: usize) -> Result<Address<'space>, Error<'space>>
+    pub fn reallocate<A>(&mut self, address: A, size: usize) -> Result<Address, Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
+        let address = address.into_address(self.space.as_ref());
         let region = self.regions.find(&address)
             .ok_or_else(|| Error::ReallocateUnmanaged(address))?;
 
@@ -321,7 +322,11 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
         let old_size = *region.interval().end() - region.interval().start() + 1usize;
 
         if !self.backing.permissions().all_readable(&old_offset, old_size.into()) {
-            return Err(Error::Backing(flat::Error::AccessViolation { address, access: Access::Read, size }))
+            return Err(Error::Backing(flat::Error::AccessViolation {
+                address: AddressValue::new(self.space.clone(), address.into()),
+                access: Access::Read,
+                size,
+            }))
         }
 
         // size + 1 to use the last byte as a red-zone
@@ -332,12 +337,12 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
 
         // set R/W permissions
         self.backing.permissions_mut()
-            .set_region(&offset.into_address(self.space), size, Access::ReadWrite);
+            .set_region(&offset.into_address(self.space.as_ref()), size, Access::ReadWrite);
         self.backing.permissions_mut()
-            .clear_byte(&(offset.into_address(self.space) + size), Access::Write);
+            .clear_byte(&(offset.into_address(self.space.as_ref()) + size), Access::Write);
 
         // copy if moved
-        if old_offset != offset.into_address(self.space) {
+        if old_offset != offset.into_address(self.space.as_ref()) {
             self.backing.copy_values(old_offset, offset, old_size.into())
                 .map_err(Error::Backing)?;
 
@@ -353,8 +358,8 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
         Ok(new_address)
     }
 
-    pub fn deallocate<A>(&mut self, address: A) -> Result<(), Error<'space>>
-    where A: Into<Address<'space>> {
+    pub fn deallocate<A>(&mut self, address: A) -> Result<(), Error>
+    where A: Into<Address> {
         let address = address.into();
         let region = self.regions.find(&address)
             .ok_or_else(|| Error::FreeUnmanaged(address))?;
@@ -378,9 +383,9 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
         Ok(())
     }
 
-    pub (crate) fn translate_checked<A>(&self, address: A, size: usize) -> Result<usize, Error<'space>>
+    pub (crate) fn translate_checked<A>(&self, address: A, size: usize) -> Result<usize, Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
+        let address = address.into_address(self.space.as_ref());
         let regions = self.regions.find_all(address..=(address + size - 1usize));
 
         // we just need to know that it exists
@@ -401,8 +406,8 @@ impl<'space, T: StateValue> ChunkState<'space, T> {
     }
 }
 
-impl<'space, V: StateValue> State for ChunkState<'space, V> {
-    type Error = Error<'space>;
+impl<V: StateValue> State for ChunkState<V> {
+    type Error = Error;
     type Value = V;
 
     fn fork(&self) -> Self {
@@ -411,7 +416,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
             chunks: self.chunks.clone(),
             regions: self.regions.clone(),
             backing: self.backing.fork(),
-            space: self.space,
+            space: self.space.clone(),
         }
     }
 
@@ -426,7 +431,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
         self.backing.len()
     }
 
-    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error>
     where F: IntoAddress,
           T: IntoAddress {
         let from = self.translate_checked(from, size)?;
@@ -436,7 +441,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error>
     where A: IntoAddress {
         let size = values.len();
         let address = self.translate_checked(address, size)?;
@@ -445,7 +450,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error<'space>>
+    fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
 
@@ -453,7 +458,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
             .map_err(|e| Error::backing(self.base_address, e))
     }
 
-    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error>
     where A: IntoAddress {
         let address = self.translate_checked(address, n)?;
         let base_address = self.base_address;
@@ -462,7 +467,7 @@ impl<'space, V: StateValue> State for ChunkState<'space, V> {
             .map_err(|e| Error::backing(base_address, e))
     }
 
-    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error>
     where A: IntoAddress {
         let size = values.len();
         let address = self.translate_checked(address, size)?;

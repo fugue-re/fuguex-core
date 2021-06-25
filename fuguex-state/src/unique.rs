@@ -9,58 +9,58 @@ pub use crate::flat::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-pub struct UniqueState<'space, T: StateValue>(FlatState<'space, T>);
+pub struct UniqueState<T: StateValue>(FlatState<T>);
 
-impl<'space, T: StateValue> AsRef<Self> for UniqueState<'space, T> {
+impl<T: StateValue> AsRef<Self> for UniqueState<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsMut<Self> for UniqueState<'space, T> {
+impl<T: StateValue> AsMut<Self> for UniqueState<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsRef<FlatState<'space, T>> for UniqueState<'space, T> {
+impl<T: StateValue> AsRef<FlatState<T>> for UniqueState<T> {
     #[inline(always)]
-    fn as_ref(&self) -> &FlatState<'space, T> {
+    fn as_ref(&self) -> &FlatState<T> {
         &self.0
     }
 }
 
-impl<'space, T: StateValue> AsMut<FlatState<'space, T>> for UniqueState<'space, T> {
+impl<T: StateValue> AsMut<FlatState<T>> for UniqueState<T> {
     #[inline(always)]
-    fn as_mut(&mut self) -> &mut FlatState<'space, T> {
+    fn as_mut(&mut self) -> &mut FlatState<T> {
         &mut self.0
     }
 }
 
-impl<'space, T: StateValue> Deref for UniqueState<'space, T> {
-    type Target = FlatState<'space, T>;
+impl<T: StateValue> Deref for UniqueState<T> {
+    type Target = FlatState<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'space, T: StateValue> DerefMut for UniqueState<'space, T> {
+impl<T: StateValue> DerefMut for UniqueState<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'space, T: StateValue> From<UniqueState<'space, T>> for FlatState<'space, T> {
-    fn from(t: UniqueState<'space, T>) -> Self {
+impl<T: StateValue> From<UniqueState<T>> for FlatState<T> {
+    fn from(t: UniqueState<T>) -> Self {
         t.0
     }
 }
 
-impl<'space, V: StateValue> State for UniqueState<'space, V> {
-    type Error = Error<'space>;
+impl<V: StateValue> State for UniqueState<V> {
+    type Error = Error;
     type Value = V;
 
     #[inline(always)]
@@ -110,8 +110,8 @@ impl<'space, V: StateValue> State for UniqueState<'space, V> {
     }
 }
 
-impl<'space, T: StateValue> UniqueState<'space, T> {
-    pub fn new(translator: &'space Translator) -> Self {
+impl<T: StateValue> UniqueState<T> {
+    pub fn new(translator: &Translator) -> Self {
         let space = translator.manager().unique_space();
         let size = translator.unique_space_size();
         Self(FlatState::new(space, size))

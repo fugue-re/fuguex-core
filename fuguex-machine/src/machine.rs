@@ -1,32 +1,28 @@
-use std::marker::PhantomData;
-
-use fugue::ir::{Address, IntoAddress};
+use fugue::ir::{AddressValue, IntoAddress};
 use fugue::ir::il::pcode::PCodeOp;
 
 use crate::traits::Interpreter;
 use crate::types::{Bound, BranchOutcome, Outcome, StepOutcome};
 
-pub struct Machine<'space, I: Interpreter<'space>> {
+pub struct Machine<I: Interpreter> {
     interpreter: I,
-    marker: PhantomData<&'space ()>,
 }
 
-impl<'space, I> From<I> for Machine<'space, I> where I: Interpreter<'space> {
+impl<I> From<I> for Machine<I> where I: Interpreter {
     fn from(interpreter: I) -> Self {
         Self {
             interpreter,
-            marker: PhantomData,
         }
     }
 }
 
-impl<'space, I> Machine<'space, I> where I: Interpreter<'space> {
+impl<I> Machine<I> where I: Interpreter {
     #[inline(always)]
     pub fn new(interpreter: I) -> Self {
         Self::from(interpreter)
     }
 
-    pub fn step<A>(&mut self, address: A) -> Result<StepOutcome<'space>, I::Error>
+    pub fn step<A>(&mut self, address: A) -> Result<StepOutcome, I::Error>
     where A: IntoAddress {
         let mut step_state = self.interpreter.lift(address)?;
 
@@ -247,16 +243,16 @@ impl<'space, I> Machine<'space, I> where I: Interpreter<'space> {
         Ok(StepOutcome::Branch(step_state.fallthrough()))
     }
 
-    pub fn step_until<A, B>(&mut self, address: A, until: Bound<'space, B>) -> Result<Bound<'space, Address<'space>>, I::Error>
+    pub fn step_until<A, B>(&mut self, address: A, until: Bound<B>) -> Result<Bound<AddressValue>, I::Error>
         where A: IntoAddress,
-              B: IntoAddress + 'space {
+              B: IntoAddress {
         let space = self.interpreter.interpreter_space();
-        let mut bound = until.in_space(space);
-        let mut address = address.into_address(space);
+        let mut bound = until.in_space(space.clone());
+        let mut address = address.into_address_value(space);
 
-        while !bound.reached(address) {
+        while !bound.reached(&address) {
             bound = bound.deplete();
-            if let StepOutcome::Branch(next_address) = self.step(address)? {
+            if let StepOutcome::Branch(next_address) = self.step(&address)? {
                 address = next_address;
             } else {
                 break

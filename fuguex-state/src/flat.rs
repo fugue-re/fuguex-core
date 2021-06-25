@@ -1,70 +1,71 @@
 use std::fmt;
 use std::mem::size_of;
+use std::sync::Arc;
 
 use fugue::ir::IntoAddress;
-use fugue::ir::{Address, AddressSpace};
+use fugue::ir::{Address, AddressValue, AddressSpace};
 
 use crate::traits::{State, StateValue};
 
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error<'space> {
+pub enum Error {
     #[error("{access} access violation at {address} of {size} bytes in `{}` space", address.space().name())]
-    AccessViolation { address: Address<'space>, size: usize, access: Access },
+    AccessViolation { address: AddressValue, size: usize, access: Access },
     #[error("out-of-bounds read of `{size}` bytes at {address}")]
-    OOBRead { address: Address<'space>, size: usize },
+    OOBRead { address: Address, size: usize },
     #[error("out-of-bounds write of `{size}` bytes at {address}")]
-    OOBWrite { address: Address<'space>, size: usize },
+    OOBWrite { address: Address, size: usize },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct FlatState<'space, T: StateValue> {
+pub struct FlatState<T: StateValue> {
     backing: Vec<T>,
     dirty: DirtyBacking,
     permissions: Permissions,
-    space: &'space AddressSpace,
+    space: Arc<AddressSpace>,
 }
 
-impl<'space, T: StateValue> AsRef<Self> for FlatState<'space, T> {
+impl<T: StateValue> AsRef<Self> for FlatState<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue> AsMut<Self> for FlatState<'space, T> {
+impl<T: StateValue> AsMut<Self> for FlatState<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue> FlatState<'space, T> {
-    pub fn new(space: &'space AddressSpace, size: usize) -> Self {
+impl<T: StateValue> FlatState<T> {
+    pub fn new(space: Arc<AddressSpace>, size: usize) -> Self {
         Self {
             backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new(size),
+            permissions: Permissions::new(space.clone(), size),
             space,
         }
     }
 
-    pub fn read_only(space: &'space AddressSpace, size: usize) -> Self {
+    pub fn read_only(space: Arc<AddressSpace>, size: usize) -> Self {
         Self {
             backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new_with(size, PERM_READ_MASK),
+            permissions: Permissions::new_with(space.clone(), size, PERM_READ_MASK),
             space,
         }
     }
 
-    pub fn from_vec(space: &'space AddressSpace, values: Vec<T>) -> Self {
+    pub fn from_vec(space: Arc<AddressSpace>, values: Vec<T>) -> Self {
         let size = values.len();
         Self {
             backing: values,
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new(size),
+            permissions: Permissions::new(space.clone(), size),
             space,
         }
     }
@@ -77,13 +78,13 @@ impl<'space, T: StateValue> FlatState<'space, T> {
         &mut self.permissions
     }
 
-    pub fn address_space(&self) -> &'space AddressSpace {
-        self.space
+    pub fn address_space(&self) -> Arc<AddressSpace> {
+        self.space.clone()
     }
 }
 
-impl<'space, V: StateValue> State for FlatState<'space, V> {
-    type Error = Error<'space>;
+impl<V: StateValue> State for FlatState<V> {
+    type Error = Error;
     type Value = V;
 
     fn fork(&self) -> Self {
@@ -91,14 +92,14 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
             backing: self.backing.clone(),
             dirty: self.dirty.fork(),
             permissions: self.permissions.clone(),
-            space: self.space,
+            space: self.space.clone(),
         }
     }
 
     fn restore(&mut self, other: &Self) {
         for block in &self.dirty.indices {
-            let start = block.start_address(self.space).offset() as usize;
-            let end = block.end_address(self.space).offset() as usize;
+            let start = usize::from(block.start_address(self.space.as_ref()));
+            let end = usize::from(block.end_address(self.space.as_ref()));
 
             let real_end = self.backing.len().min(end);
 
@@ -112,14 +113,14 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
         self.backing.len()
     }
 
-    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error<'space>>
+    fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error>
     where F: IntoAddress,
           T: IntoAddress {
-        let from = from.into_address(self.space);
-        let to = to.into_address(self.space);
+        let from = from.into_address(self.space.as_ref());
+        let to = to.into_address(self.space.as_ref());
 
-        let soff = from.offset() as usize;
-        let doff = to.offset() as usize;
+        let soff = usize::from(from);
+        let doff = usize::from(to);
 
         if soff > self.len() || soff.checked_add(size).is_none() || soff + size > self.len() {
             return Err(Error::OOBRead {
@@ -130,7 +131,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_readable(&from, size) {
             return Err(Error::AccessViolation {
-                address: from.clone(),
+                address: AddressValue::new(self.space.clone(), from.into()),
                 size,
                 access: Access::Read,
             })
@@ -145,7 +146,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_writable(&to, size) {
             return Err(Error::AccessViolation {
-                address: to.clone(),
+                address: AddressValue::new(self.space.clone(), to.into()),
                 size,
                 access: Access::Write,
             })
@@ -186,11 +187,11 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
         Ok(())
     }
 
-    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error<'space>>
+    fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
+        let address = address.into_address(self.space.as_ref());
         let size = values.len();
-        let start = address.offset() as usize;
+        let start = usize::from(address);
         let end = start.checked_add(size);
 
         if start > self.len() || end.is_none() || end.unwrap() > self.len() {
@@ -202,7 +203,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
-                address: address.clone(),
+                address: AddressValue::new(self.space.clone(), address.into()),
                 size,
                 access: Access::Read,
             })
@@ -215,10 +216,10 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
         Ok(())
     }
 
-    fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Error<'space>>
+    fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
-        let start = address.offset() as usize;
+        let address = address.into_address(self.space.as_ref());
+        let start = usize::from(address);
         let end = start.checked_add(size);
 
         if start > self.len() || end.is_none() || end.unwrap() > self.len() {
@@ -230,7 +231,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
-                address: address.clone(),
+                address: AddressValue::new(self.space.clone(), address.into()),
                 size,
                 access: Access::Read,
             })
@@ -241,10 +242,10 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
         Ok(&self.backing[start..end])
     }
 
-    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Error<'space>>
+    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
-        let start = address.offset() as usize;
+        let address = address.into_address(self.space.as_ref());
+        let start = usize::from(address);
         let end = start.checked_add(size);
 
         if start > self.len() || end.is_none() || end.unwrap() > self.len() {
@@ -256,7 +257,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_readable_and_writable(&address, size) {
             return Err(Error::AccessViolation {
-                address: address.clone(),
+                address: AddressValue::new(self.space.clone(), address.into()),
                 size,
                 access: Access::ReadWrite,
             })
@@ -269,11 +270,11 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
         Ok(&mut self.backing[start..end])
     }
 
-    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error<'space>>
+    fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error>
     where A: IntoAddress {
-        let address = address.into_address(self.space);
+        let address = address.into_address(self.space.as_ref());
         let size = values.len();
-        let start = address.offset() as usize;
+        let start = usize::from(address);
         let end = start.checked_add(size);
 
         if start > self.len() || end.is_none() || end.unwrap() > self.len() {
@@ -285,7 +286,7 @@ impl<'space, V: StateValue> State for FlatState<'space, V> {
 
         if !self.permissions.all_writable(&address, size) {
             return Err(Error::AccessViolation {
-                address: address.clone(),
+                address: AddressValue::new(self.space.clone(), address.into()),
                 size,
                 access: Access::Write,
             })
@@ -306,15 +307,15 @@ struct Block(u64);
 
 pub const BLOCK_SIZE: u64 = 64;
 
-impl<'space> From<&'_ Address<'space>> for Block {
-    fn from(t: &Address<'space>) -> Block {
-        Self(t.offset() / BLOCK_SIZE)
+impl From<&'_ Address> for Block {
+    fn from(t: &Address) -> Block {
+        Self(u64::from(*t) / BLOCK_SIZE)
     }
 }
 
-impl<'space> From<Address<'space>> for Block {
-    fn from(t: Address<'space>) -> Block {
-        Self(t.offset() / BLOCK_SIZE)
+impl From<Address> for Block {
+    fn from(t: Address) -> Block {
+        Self(u64::from(t) / BLOCK_SIZE)
     }
 }
 
@@ -336,13 +337,13 @@ impl Block {
     }
 
     #[inline]
-    fn start_address<'space>(&self, space: &'space AddressSpace) -> Address<'space> {
-        Address::new(space, self.0 * BLOCK_SIZE)
+    fn start_address(&self, space: &AddressSpace) -> Address {
+        (self.0 * BLOCK_SIZE).into_address(space)
     }
 
     #[inline]
-    fn end_address<'space>(&self, space: &'space AddressSpace) -> Address<'space> {
-        Address::new(space, (self.0 + 1) * BLOCK_SIZE)
+    fn end_address(&self, space: &AddressSpace) -> Address {
+        ((self.0 + 1) * BLOCK_SIZE).into_address(space)
     }
 }
 
@@ -382,9 +383,9 @@ impl DirtyBacking {
     }
 
     #[inline]
-    fn dirty_region<'space>(&mut self, start: &Address<'space>, size: usize) {
+    fn dirty_region(&mut self, start: &Address, size: usize) {
         let sblock = Block::from(start).0;
-        let eblock = Block::from(start.offset() + size as u64).0;
+        let eblock = Block::from(*start + size as u64).0;
 
         for block in sblock..=eblock {
             self.dirty(block);
@@ -429,6 +430,7 @@ impl Access {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Permissions {
     bitsmap: Vec<u64>,
+    space: Arc<AddressSpace>,
 }
 
 const PERM_READ_OFF: usize = 1;
@@ -442,22 +444,23 @@ const PERM_SCALE: usize = (size_of::<u64>() << 3) >> 1;
 const PERM_SELECT: usize = 1;
 
 impl Permissions {
-    pub fn new(size: usize) -> Self {
-        Self::new_with(size, PERM_READ_MASK | PERM_WRITE_MASK)
+    pub fn new(space: Arc<AddressSpace>, size: usize) -> Self {
+        Self::new_with(space, size, PERM_READ_MASK | PERM_WRITE_MASK)
     }
 
     #[inline]
-    pub fn new_with(size: usize, mask: u64) -> Self {
+    pub fn new_with(space: Arc<AddressSpace>, size: usize, mask: u64) -> Self {
         Self {
             // NOTE: we represent each permission by two bits and set
             // each byte to readable by default
             bitsmap: vec![mask; 1 + size / PERM_SCALE],
+            space,
         }
     }
 
     #[inline]
-    pub fn is_marked<'space>(&self, address: &Address<'space>, access: Access) -> bool {
-        let address = address.offset();
+    pub fn is_marked(&self, address: &Address, access: Access) -> bool {
+        let address = u64::from(address);
         let index = (address / PERM_SCALE as u64) as usize;
         let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
         let check = if access.is_read_write() {
@@ -474,25 +477,25 @@ impl Permissions {
     }
 
     #[inline]
-    pub fn is_readable<'space>(&self, address: &Address<'space>) -> bool {
+    pub fn is_readable(&self, address: &Address) -> bool {
         self.is_marked(address, Access::Read)
     }
 
     #[inline]
-    pub fn is_writable<'space>(&self, address: &Address<'space>) -> bool {
+    pub fn is_writable(&self, address: &Address) -> bool {
         self.is_marked(address, Access::Write)
     }
 
     #[inline]
-    pub fn is_readable_and_writable<'space>(&self, address: &Address<'space>) -> bool {
+    pub fn is_readable_and_writable(&self, address: &Address) -> bool {
         self.is_marked(address, Access::ReadWrite)
     }
 
     #[inline]
-    pub fn all_marked<'space>(&self, address: &Address<'space>, size: usize, access: Access) -> bool {
-        let start = address.offset();
+    pub fn all_marked(&self, address: &Address, size: usize, access: Access) -> bool {
+        let start = u64::from(address);
         for addr in start..(start + size as u64) {
-            if !self.is_marked(&Address::new(address.space(), addr), access) {
+            if !self.is_marked(&Address::new(self.space.as_ref(), addr), access) {
                 return false
             }
         }
@@ -500,23 +503,23 @@ impl Permissions {
     }
 
     #[inline]
-    pub fn all_readable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+    pub fn all_readable(&self, address: &Address, size: usize) -> bool {
         self.all_marked(address, size, Access::Read)
     }
 
     #[inline]
-    pub fn all_writable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+    pub fn all_writable(&self, address: &Address, size: usize) -> bool {
         self.all_marked(address, size, Access::Write)
     }
 
     #[inline]
-    pub fn all_readable_and_writable<'space>(&self, address: &Address<'space>, size: usize) -> bool {
+    pub fn all_readable_and_writable(&self, address: &Address, size: usize) -> bool {
         self.all_marked(address, size, Access::ReadWrite)
     }
 
     #[inline]
-    pub fn clear_byte<'space>(&mut self, address: &Address<'space>, access: Access) {
-        let address = address.offset();
+    pub fn clear_byte(&mut self, address: &Address, access: Access) {
+        let address = u64::from(address);
         let index = (address / PERM_SCALE as u64) as usize;
         let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
         let check = if access.is_read_write() {
@@ -532,8 +535,8 @@ impl Permissions {
     }
 
     #[inline]
-    pub fn set_byte<'space>(&mut self, address: &Address<'space>, access: Access) {
-        let address = address.offset();
+    pub fn set_byte(&mut self, address: &Address, access: Access) {
+        let address = u64::from(address);
         let index = (address / PERM_SCALE as u64) as usize;
         let bit = ((address % PERM_SCALE as u64) as usize) << PERM_SELECT;
         let check = if access.is_read_write() {
@@ -550,18 +553,18 @@ impl Permissions {
     }
 
     #[inline]
-    pub fn clear_region<'space>(&mut self, address: &Address<'space>, size: usize, access: Access) {
-        let start = address.offset();
+    pub fn clear_region(&mut self, address: &Address, size: usize, access: Access) {
+        let start = u64::from(address);
         for addr in start..(start + size as u64) {
-            self.clear_byte(&Address::new(address.space(), addr), access);
+            self.clear_byte(&Address::new(self.space.as_ref(), addr), access);
         }
     }
 
     #[inline]
-    pub fn set_region<'space>(&mut self, address: &Address<'space>, size: usize, access: Access) {
-        let start = address.offset();
+    pub fn set_region(&mut self, address: &Address, size: usize, access: Access) {
+        let start = u64::from(address);
         for addr in start..(start + size as u64) {
-            self.set_byte(&Address::new(address.space(), addr), access);
+            self.set_byte(&Address::new(self.space.as_ref(), addr), access);
         }
     }
 }

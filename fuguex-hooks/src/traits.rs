@@ -2,68 +2,68 @@ use fugue::ir::Address;
 use fugue::ir::il::pcode::{Operand, Register};
 use fuguex_state::State;
 
-pub trait Hook<'space> {
-    type State: State + 'space;
-    type Error: std::error::Error + Send + Sync + 'space;
+pub trait Hook {
+    type State: State;
+    type Error: std::error::Error + Send + Sync;
 }
 
-pub trait HookMemoryRead<'space>: Hook<'space> {
+pub trait HookMemoryRead: Hook {
     fn hook_memory_read(
         &mut self,
         state: &mut Self::State,
-        address: &Address<'space>,
+        address: &Address,
         value: &[<Self::State as State>::Value]
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookMemoryWrite<'space>: Hook<'space> {
+pub trait HookMemoryWrite: Hook {
     fn hook_memory_write(
         &mut self,
         state: &mut Self::State,
-        address: &Address<'space>,
+        address: &Address,
         value: &mut [<Self::State as State>::Value]
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookRegisterRead<'space>: Hook<'space> {
+pub trait HookRegisterRead: Hook {
     fn hook_register_read(
         &mut self,
         state: &mut Self::State,
-        register: &Register<'space>,
+        register: &Register,
         value: &[<Self::State as State>::Value]
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookRegisterWrite<'space>: Hook<'space> {
+pub trait HookRegisterWrite: Hook {
     fn hook_register_write(
         &mut self,
         state: &mut Self::State,
-        register: &Register<'space>,
+        register: &Register,
         value: &mut [<Self::State as State>::Value]
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookCall<'space>: Hook<'space> {
+pub trait HookCall: Hook {
     fn hook_call(
         &mut self,
         state: &mut Self::State,
-        destination: &Address<'space>,
+        destination: &Address,
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookBranch<'space>: Hook<'space> {
+pub trait HookBranch: Hook {
     fn hook_branch(
         &mut self,
         state: &mut Self::State,
-        destination: &Address<'space>,
+        destination: &Address,
     ) -> Result<(), Self::Error>;
 }
 
-pub trait HookCBranch<'space>: Hook<'space> {
+pub trait HookCBranch: Hook {
     fn hook_cbranch(
         &mut self,
         state: &mut Self::State,
-        destination: &Address<'space>,
-        condition: &Operand<'space>,
+        destination: &Address,
+        condition: &Operand,
     ) -> Result<(), Self::Error>;
 }

@@ -15,37 +15,37 @@ use crate::traits::{State, StateValue};
 use crate::traits::{FromStateValues, IntoStateValues};
 
 #[derive(Debug, Error)]
-pub enum Error<'space> {
+pub enum Error {
     #[error(transparent)]
-    Memory(paged::Error<'space>),
+    Memory(paged::Error),
     #[error(transparent)]
-    Register(register::Error<'space>),
+    Register(register::Error),
     #[error(transparent)]
-    Temporary(unique::Error<'space>),
+    Temporary(unique::Error),
 }
 
 #[derive(Debug, Clone)]
-pub struct PCodeState<'space, T: StateValue, O: Order> {
-    memory: PagedState<'space, T>,
-    registers: RegisterState<'space, T>,
-    temporaries: UniqueState<'space, T>,
+pub struct PCodeState<T: StateValue, O: Order> {
+    memory: PagedState<T>,
+    registers: RegisterState<T>,
+    temporaries: UniqueState<T>,
     marker: PhantomData<O>,
 }
 
-impl<'space, T: StateValue, O: Order> AsRef<Self> for PCodeState<'space, T, O> {
+impl<T: StateValue, O: Order> AsRef<Self> for PCodeState<T, O> {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'space, T: StateValue, O: Order> AsMut<Self> for PCodeState<'space, T, O> {
+impl<T: StateValue, O: Order> AsMut<Self> for PCodeState<T, O> {
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl<'space, T: StateValue, O: Order> PCodeState<'space, T, O> {
-    pub fn new(memory: PagedState<'space, T>, translator: &'space Translator) -> Self {
+impl<T: StateValue, O: Order> PCodeState<T, O> {
+    pub fn new(memory: PagedState<T>, translator: &Translator) -> Self {
         Self {
             memory,
             registers: RegisterState::new(translator),
@@ -54,36 +54,36 @@ impl<'space, T: StateValue, O: Order> PCodeState<'space, T, O> {
         }
     }
 
-    pub fn memory(&self) -> &PagedState<'space, T> {
+    pub fn memory(&self) -> &PagedState<T> {
         &self.memory
     }
 
-    pub fn memory_mut(&mut self) -> &mut PagedState<'space, T> {
+    pub fn memory_mut(&mut self) -> &mut PagedState<T> {
         &mut self.memory
     }
 
-    pub fn registers(&self) -> &RegisterState<'space, T> {
+    pub fn registers(&self) -> &RegisterState<T> {
         &self.registers
     }
 
-    pub fn registers_mut(&mut self) -> &mut RegisterState<'space, T> {
+    pub fn registers_mut(&mut self) -> &mut RegisterState<T> {
         &mut self.registers
     }
 
-    pub fn temporaries(&self) -> &UniqueState<'space, T> {
+    pub fn temporaries(&self) -> &UniqueState<T> {
         &self.temporaries
     }
 
-    pub fn temporaries_mut(&mut self) -> &mut UniqueState<'space, T> {
+    pub fn temporaries_mut(&mut self) -> &mut UniqueState<T> {
         &mut self.temporaries
     }
 
-    pub fn with_operand_values<U, F>(&self, operand: &Operand<'space>, f: F) -> Result<U, Error<'space>>
+    pub fn with_operand_values<U, F>(&self, operand: &Operand, f: F) -> Result<U, Error>
     where F: FnOnce(&[T]) -> U {
         match operand {
             Operand::Address { value, size } => {
                 self.memory()
-                    .view_values(*value, *size)
+                    .view_values(value.offset(), *size)
                     .map_err(Error::Memory)
                     .map(f)
             },
@@ -118,12 +118,12 @@ impl<'space, T: StateValue, O: Order> PCodeState<'space, T, O> {
         }
     }
 
-    pub fn with_operand_values_mut<U, F>(&mut self, operand: &Operand<'space>, f: F) -> Result<U, Error<'space>>
+    pub fn with_operand_values_mut<U, F>(&mut self, operand: &Operand, f: F) -> Result<U, Error>
     where F: FnOnce(&mut [T]) -> U {
         match operand {
             Operand::Address { value, size } => {
                 self.memory_mut()
-                    .view_values_mut(*value, *size)
+                    .view_values_mut(value.offset(), *size)
                     .map_err(Error::Memory)
                     .map(f)
             },
@@ -145,17 +145,17 @@ impl<'space, T: StateValue, O: Order> PCodeState<'space, T, O> {
         }
     }
 
-    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand<'space>) -> Result<V, Error<'space>> {
+    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand) -> Result<V, Error> {
         self.with_operand_values(operand, |values| V::from_values::<O>(values))
     }
 
-    pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand<'space>, value: V) -> Result<(), Error<'space>> {
+    pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand, value: V) -> Result<(), Error> {
         self.with_operand_values_mut(operand, |values| value.into_values::<O>(values))
     }
 }
 
-impl<'space, V: StateValue, O: Order> State for PCodeState<'space, V, O> {
-    type Error = Error<'space>;
+impl<V: StateValue, O: Order> State for PCodeState<V, O> {
+    type Error = Error;
     type Value = V;
 
     fn fork(&self) -> Self {
