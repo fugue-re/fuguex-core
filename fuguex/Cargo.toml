@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+fuguex-hooks = { path = "../fuguex-hooks" }
+fuguex-machine = { path = "../fuguex-machine" }
 fuguex-state = { path = "../fuguex-state" }
