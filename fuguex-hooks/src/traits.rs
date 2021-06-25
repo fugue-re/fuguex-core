@@ -1,6 +1,9 @@
 use fugue::ir::Address;
 use fugue::ir::il::pcode::{Operand, Register};
+
 use fuguex_state::State;
+
+use crate::types::{HookAction, HookBranchAction, HookCBranchAction, HookCallAction};
 
 pub trait Hook {
     type State: State;
@@ -13,7 +16,7 @@ pub trait HookMemoryRead: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &[<Self::State as State>::Value]
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookAction, Self::Error>;
 }
 
 pub trait HookMemoryWrite: Hook {
@@ -22,7 +25,7 @@ pub trait HookMemoryWrite: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &mut [<Self::State as State>::Value]
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookAction, Self::Error>;
 }
 
 pub trait HookRegisterRead: Hook {
@@ -31,7 +34,7 @@ pub trait HookRegisterRead: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &[<Self::State as State>::Value]
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookAction, Self::Error>;
 }
 
 pub trait HookRegisterWrite: Hook {
@@ -40,7 +43,7 @@ pub trait HookRegisterWrite: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &mut [<Self::State as State>::Value]
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookAction, Self::Error>;
 }
 
 pub trait HookCall: Hook {
@@ -48,7 +51,7 @@ pub trait HookCall: Hook {
         &mut self,
         state: &mut Self::State,
         destination: &Address,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookCallAction, Self::Error>;
 }
 
 pub trait HookBranch: Hook {
@@ -56,7 +59,7 @@ pub trait HookBranch: Hook {
         &mut self,
         state: &mut Self::State,
         destination: &Address,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookBranchAction, Self::Error>;
 }
 
 pub trait HookCBranch: Hook {
@@ -65,5 +68,5 @@ pub trait HookCBranch: Hook {
         state: &mut Self::State,
         destination: &Address,
         condition: &Operand,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<HookCBranchAction, Self::Error>;
 }

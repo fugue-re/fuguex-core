@@ -1,9 +1,10 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use fugue::bytes::Order;
 
 use fugue::ir::il::pcode::Operand;
-use fugue::ir::{IntoAddress, Translator};
+use fugue::ir::{AddressSpace, IntoAddress, Translator};
 
 use thiserror::Error;
 
@@ -60,6 +61,14 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
 
     pub fn memory_mut(&mut self) -> &mut PagedState<T> {
         &mut self.memory
+    }
+
+    pub fn memory_space(&self) -> Arc<AddressSpace> {
+        self.memory().address_space()
+    }
+
+    pub fn memory_space_ref(&self) -> &AddressSpace {
+        self.memory().address_space_ref()
     }
 
     pub fn registers(&self) -> &RegisterState<T> {

@@ -81,6 +81,10 @@ impl<T: StateValue> FlatState<T> {
     pub fn address_space(&self) -> Arc<AddressSpace> {
         self.space.clone()
     }
+
+    pub fn address_space_ref(&self) -> &AddressSpace {
+        self.space.as_ref()
+    }
 }
 
 impl<V: StateValue> State for FlatState<V> {

@@ -1,9 +1,10 @@
-use fugue::ir::{Address, IntoAddress};
+use fugue::ir::{Address, AddressSpace, IntoAddress};
 use interval_tree::{IntervalTree, Interval, Entry};
 
 use std::iter::FromIterator;
 use std::ops::Range;
 use std::mem::take;
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -224,6 +225,14 @@ impl<T: StateValue> PagedState<T> {
 
     pub fn inner_mut(&mut self) -> &mut FlatState<T> {
         &mut self.inner
+    }
+
+    pub fn address_space(&self) -> Arc<AddressSpace> {
+        self.inner.address_space()
+    }
+
+    pub fn address_space_ref(&self) -> &AddressSpace {
+        self.inner.address_space_ref()
     }
 }
 
