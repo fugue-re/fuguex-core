@@ -294,6 +294,45 @@ impl<T: StateValue> PagedState<T> {
         }
     }
 
+    pub fn with_flat_from<'a, A, F, O: 'a>(&'a self, address: A, f: F) -> Result<O, Error>
+    where A: IntoAddress,
+          F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
+        let address = address.into_address(self.inner.address_space().as_ref());
+        if let Some(principal) = self.segments.find(&address) {
+            if address == *principal.interval().end() {
+                return Err(Error::OverlappedAccess {
+                    address,
+                    size: 1,
+                });
+            }
+
+            match principal.value() {
+                Segment::Mapping { ref backing, .. } => {
+                    let access_size = backing.len();
+                    let translated = backing.translate_checked(address, access_size)
+                        .map_err(Error::Chunked)?;
+                    f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
+                },
+                Segment::Static { offset, .. } => {
+                    let access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
+                    let address = (address - *principal.interval().start()) + *offset;
+                    f(&self.inner, address.into_address(self.inner.address_space().as_ref()), access_size)
+                },
+            }
+        } else {
+            Err(Error::UnmappedAddress { address, size: 1 })
+        }
+    }
+
+    pub fn view_values_from<A>(&self, address: A) -> Result<&[T], Error>
+    where
+        A: IntoAddress,
+    {
+        self.with_flat_from(address, |inner, address, n| {
+            inner.view_values(address, n).map_err(|e| Error::backing(address, e))
+        })
+    }
+
     pub fn segment_bounds<A>(&self, address: A) -> Result<Entry<Address, Segment<T>>, Error>
     where A: IntoAddress {
         let address = address.into_address(self.inner.address_space().as_ref());

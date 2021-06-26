@@ -32,10 +32,10 @@ impl<I> Machine<I> where I: Interpreter {
                     self.interpreter.copy(source, destination)
                 },
                 PCodeOp::Load { ref source, ref destination, space } => {
-                    self.interpreter.load(source, destination, space)
+                    self.interpreter.load(source, destination, space.clone())
                 },
                 PCodeOp::Store { ref source, ref destination, space } => {
-                    self.interpreter.store(source, destination, space)
+                    self.interpreter.store(source, destination, space.clone())
                 },
                 PCodeOp::Branch { ref destination } => {
                     self.interpreter.branch(destination)

@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use fugue::bytes::Order;
+use fugue::bytes::{ByteCast, Order};
 
+use fugue::ir::convention::Convention;
 use fugue::ir::il::pcode::Operand;
-use fugue::ir::{AddressSpace, IntoAddress, Translator};
+use fugue::ir::{Address, AddressSpace, IntoAddress, Translator};
 
 use thiserror::Error;
 
@@ -15,6 +16,12 @@ use crate::unique::{self, UniqueState};
 use crate::traits::{State, StateValue};
 use crate::traits::{FromStateValues, IntoStateValues};
 
+pub const POINTER_8_SIZE: usize = 1;
+pub const POINTER_16_SIZE: usize = 2;
+pub const POINTER_32_SIZE: usize = 4;
+pub const POINTER_64_SIZE: usize = 8;
+pub const MAX_POINTER_SIZE: usize = POINTER_64_SIZE;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
@@ -23,13 +30,16 @@ pub enum Error {
     Register(register::Error),
     #[error(transparent)]
     Temporary(unique::Error),
+    #[error("unsupported addess size of `{0}` bytes")]
+    UnsupportedAddressSize(usize),
 }
 
 #[derive(Debug, Clone)]
 pub struct PCodeState<T: StateValue, O: Order> {
     memory: PagedState<T>,
-    registers: RegisterState<T>,
+    registers: RegisterState<T, O>,
     temporaries: UniqueState<T>,
+    convention: Convention,
     marker: PhantomData<O>,
 }
 
@@ -46,13 +56,18 @@ impl<T: StateValue, O: Order> AsMut<Self> for PCodeState<T, O> {
 }
 
 impl<T: StateValue, O: Order> PCodeState<T, O> {
-    pub fn new(memory: PagedState<T>, translator: &Translator) -> Self {
+    pub fn new(memory: PagedState<T>, translator: &Translator, convention: &Convention) -> Self {
         Self {
             memory,
-            registers: RegisterState::new(translator),
+            registers: RegisterState::new(translator, convention),
             temporaries: UniqueState::new(translator),
+            convention: convention.clone(),
             marker: PhantomData,
         }
+    }
+
+    pub fn convention(&self) -> &Convention {
+        &self.convention
     }
 
     pub fn memory(&self) -> &PagedState<T> {
@@ -71,11 +86,11 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
         self.memory().address_space_ref()
     }
 
-    pub fn registers(&self) -> &RegisterState<T> {
+    pub fn registers(&self) -> &RegisterState<T, O> {
         &self.registers
     }
 
-    pub fn registers_mut(&mut self) -> &mut RegisterState<T> {
+    pub fn registers_mut(&mut self) -> &mut RegisterState<T, O> {
         &mut self.registers
     }
 
@@ -161,6 +176,75 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
     pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand, value: V) -> Result<(), Error> {
         self.with_operand_values_mut(operand, |values| value.into_values::<O>(values))
     }
+
+    #[inline(always)]
+    pub fn view_values_from<A>(&self, address: A) -> Result<&[T], Error>
+    where A: IntoAddress {
+        self.memory.view_values_from(address)
+            .map_err(Error::Memory)
+    }
+}
+
+impl<O: Order> PCodeState<u8, O> {
+    pub fn get_address(&self, operand: &Operand) -> Result<Address, Error> {
+        let mut buf = [0u8; MAX_POINTER_SIZE];
+        let size = operand.size();
+
+        let address = if size == POINTER_64_SIZE {
+            self.with_operand_values(operand, |values| {
+                buf[..size].copy_from_slice(values);
+                u64::from_bytes::<O>(values)
+            })
+        } else if size == POINTER_32_SIZE {
+            self.with_operand_values(operand, |values| {
+                buf[..size].copy_from_slice(values);
+                u32::from_bytes::<O>(values) as u64
+            })
+        } else if size == POINTER_16_SIZE {
+            self.with_operand_values(operand, |values| {
+                buf[..size].copy_from_slice(values);
+                u16::from_bytes::<O>(values) as u64
+            })
+        } else if size == POINTER_8_SIZE {
+            self.with_operand_values(operand, |values| {
+                buf[..size].copy_from_slice(values);
+                u8::from_bytes::<O>(values) as u64
+            })
+        } else {
+            return Err(Error::UnsupportedAddressSize(size))
+        }?;
+
+        Ok(Address::new(self.memory.address_space_ref(), address))
+    }
+
+    pub fn set_address<A>(&mut self, operand: &Operand, value: A) -> Result<(), Error>
+    where A: IntoAddress {
+
+        let size = operand.size();
+        let address = value.into_address(self.memory_space_ref());
+
+        if size == POINTER_64_SIZE {
+            self.with_operand_values_mut(operand, |values| {
+                u64::from(address).into_bytes::<O>(values)
+            })
+        } else if size == POINTER_32_SIZE {
+            self.with_operand_values_mut(operand, |values| {
+                u32::from(address).into_bytes::<O>(values)
+            })
+        } else if size == POINTER_16_SIZE {
+            self.with_operand_values_mut(operand, |values| {
+                u16::from(address).into_bytes::<O>(values)
+            })
+        } else if size == POINTER_8_SIZE {
+            self.with_operand_values_mut(operand, |values| {
+                u8::from(address).into_bytes::<O>(values)
+            })
+        } else {
+            return Err(Error::UnsupportedAddressSize(size))
+        }?;
+
+        Ok(())
+    }
 }
 
 impl<V: StateValue, O: Order> State for PCodeState<V, O> {
@@ -169,6 +253,7 @@ impl<V: StateValue, O: Order> State for PCodeState<V, O> {
 
     fn fork(&self) -> Self {
         Self {
+            convention: self.convention.clone(),
             registers: self.registers.fork(),
             temporaries: self.temporaries.fork(),
             memory: self.memory.fork(),

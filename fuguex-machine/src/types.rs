@@ -3,6 +3,7 @@ use fugue::ir::il::pcode::{PCode, PCodeOp};
 
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
 pub enum Bound<A: IntoAddress> {
     Address(A),
     Steps(usize),
@@ -50,30 +51,35 @@ impl Bound<AddressValue> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Branch {
     Next,
     Local(isize),
     Global(AddressValue),
 }
 
+#[derive(Debug, Clone)]
 pub enum Outcome {
     Halt,
     Branch(Branch),
 }
 
+#[derive(Debug, Clone)]
 pub enum StepOutcome {
     Halt,
     Branch(AddressValue),
 }
 
-pub struct StepState {
-    pcode: PCode,
-    position: usize,
-}
-
+#[derive(Debug, Clone)]
 pub enum BranchOutcome {
     Local,
     Global(AddressValue),
+}
+
+#[derive(Debug, Clone)]
+pub struct StepState {
+    pcode: PCode,
+    position: usize,
 }
 
 impl From<PCode> for StepState {

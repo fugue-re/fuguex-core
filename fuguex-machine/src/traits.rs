@@ -15,8 +15,8 @@ pub trait Interpreter {
     fn restore(&mut self, other: &Self);
 
     fn copy(&mut self, source: &Operand, destination: &Operand) -> Result<Outcome, Self::Error>;
-    fn load(&mut self, source: &Operand, destination: &Operand, space: &AddressSpace) -> Result<Outcome, Self::Error>;
-    fn store(&mut self, source: &Operand, destination: &Operand, space: &AddressSpace) -> Result<Outcome, Self::Error>;
+    fn load(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome, Self::Error>;
+    fn store(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome, Self::Error>;
 
     fn branch(&mut self, destination: &Operand) -> Result<Outcome, Self::Error>;
     fn cbranch(&mut self, destination: &Operand, condition: &Operand) -> Result<Outcome, Self::Error>;

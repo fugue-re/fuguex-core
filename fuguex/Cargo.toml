@@ -3,7 +3,11 @@ name = "fuguex"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+concrete = ["fuguex-concrete"]
+
 [dependencies]
+fuguex-concrete = { optional = true, path = "../fuguex-concrete" }
 fuguex-hooks = { path = "../fuguex-hooks" }
 fuguex-machine = { path = "../fuguex-machine" }
 fuguex-state = { path = "../fuguex-state" }
