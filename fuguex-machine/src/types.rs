@@ -51,22 +51,19 @@ impl Bound<AddressValue> {
     }
 }
 
-#[derive(Debug, Clone)]
 pub enum Branch {
     Next,
     Local(isize),
     Global(AddressValue),
 }
 
-#[derive(Debug, Clone)]
-pub enum Outcome {
-    Halt,
+pub enum Outcome<R> {
+    Halt(R),
     Branch(Branch),
 }
 
-#[derive(Debug, Clone)]
-pub enum StepOutcome {
-    Halt,
+pub enum StepOutcome<R> {
+    Halt(R),
     Branch(AddressValue),
 }
 

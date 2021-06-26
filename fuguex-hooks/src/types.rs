@@ -1,23 +1,20 @@
 use thiserror::Error;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HookAction {
+pub enum HookAction<R> {
     Pass,
-    Halt,
+    Halt(R),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HookCBranchAction {
+pub enum HookCBranchAction<R> {
     Pass,
     Flip,
-    Halt,
+    Halt(R),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HookCallAction {
+pub enum HookCallAction<R> {
     Pass,
     Skip,
-    Halt,
+    Halt(R),
 }
 
 #[derive(Debug, Error)]

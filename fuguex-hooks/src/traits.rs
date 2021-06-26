@@ -8,6 +8,7 @@ use crate::types::{Error, HookAction, HookCBranchAction, HookCallAction};
 pub trait Hook {
     type State: State;
     type Error: std::error::Error + Send + Sync + 'static;
+    type Outcome;
 }
 
 pub trait HookMemoryRead: Hook {
@@ -16,7 +17,7 @@ pub trait HookMemoryRead: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction, Error<Self::Error>>;
+    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>>;
 }
 
 pub trait HookMemoryWrite: Hook {
@@ -25,7 +26,7 @@ pub trait HookMemoryWrite: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction, Error<Self::Error>>;
+    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>>;
 }
 
 pub trait HookRegisterRead: Hook {
@@ -34,7 +35,7 @@ pub trait HookRegisterRead: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction, Error<Self::Error>>;
+    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>>;
 }
 
 pub trait HookRegisterWrite: Hook {
@@ -43,7 +44,7 @@ pub trait HookRegisterWrite: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction, Error<Self::Error>>;
+    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>>;
 }
 
 pub trait HookCall: Hook {
@@ -51,7 +52,7 @@ pub trait HookCall: Hook {
         &mut self,
         state: &mut Self::State,
         destination: &Address,
-    ) -> Result<HookCallAction, Error<Self::Error>>;
+    ) -> Result<HookCallAction<Self::Outcome>, Error<Self::Error>>;
 }
 
 pub trait HookCBranch: Hook {
@@ -60,5 +61,5 @@ pub trait HookCBranch: Hook {
         state: &mut Self::State,
         destination: &Operand,
         condition: &Operand,
-    ) -> Result<HookCBranchAction, Error<Self::Error>>;
+    ) -> Result<HookCBranchAction<Self::Outcome>, Error<Self::Error>>;
 }

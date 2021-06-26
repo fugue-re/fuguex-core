@@ -1,17 +1,26 @@
 use fugue::ir::{AddressValue, IntoAddress};
-use fugue::ir::il::pcode::PCodeOp;
+use fugue::ir::il::pcode::{PCode, PCodeOp};
 
 use crate::traits::Interpreter;
-use crate::types::{Bound, BranchOutcome, Outcome, StepOutcome};
+use crate::types::{Bound, BranchOutcome, Outcome, StepOutcome, StepState};
 
 pub struct Machine<I: Interpreter> {
     interpreter: I,
+    step_state: StepState,
 }
 
 impl<I> From<I> for Machine<I> where I: Interpreter {
     fn from(interpreter: I) -> Self {
+        // NO-OP to avoid wrapping in an option in absence of a Default
+        // for PCode
+        let step_state = StepState::from(PCode::nop(
+            AddressValue::new(interpreter.interpreter_space(), 0),
+            0,
+        ));
+
         Self {
             interpreter,
+            step_state,
         }
     }
 }
@@ -22,11 +31,11 @@ impl<I> Machine<I> where I: Interpreter {
         Self::from(interpreter)
     }
 
-    pub fn step<A>(&mut self, address: A) -> Result<StepOutcome, I::Error>
+    pub fn step<A>(&mut self, address: A) -> Result<StepOutcome<I::Outcome>, I::Error>
     where A: IntoAddress {
-        let mut step_state = self.interpreter.lift(address)?;
+        self.step_state = self.interpreter.lift(address)?;
 
-        while let Some(op) = step_state.current() {
+        while let Some(op) = self.step_state.current() {
             let action = match op {
                 PCodeOp::Copy { ref source, ref destination } => {
                     self.interpreter.copy(source, destination)
@@ -229,10 +238,10 @@ impl<I> Machine<I> where I: Interpreter {
             }?;
 
             match action {
-                Outcome::Halt => {
-                    return Ok(StepOutcome::Halt)
+                Outcome::Halt(outcome) => {
+                    return Ok(StepOutcome::Halt(outcome))
                 },
-                Outcome::Branch(ref branch) => if let BranchOutcome::Global(address) = step_state.branch(branch) {
+                Outcome::Branch(ref branch) => if let BranchOutcome::Global(address) = self.step_state.branch(branch) {
                     return Ok(StepOutcome::Branch(address))
                 } else {
                     continue
@@ -240,7 +249,7 @@ impl<I> Machine<I> where I: Interpreter {
             }
         }
 
-        Ok(StepOutcome::Branch(step_state.fallthrough()))
+        Ok(StepOutcome::Branch(self.step_state.fallthrough()))
     }
 
     pub fn step_until<A, B>(&mut self, address: A, until: Bound<B>) -> Result<Bound<AddressValue>, I::Error>

@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
@@ -52,20 +53,21 @@ pub enum Error {
 pub type ConcreteState<O> = PCodeState<u8, O>;
 
 #[derive(Clone)]
-pub struct ConcreteContext<O: Order, const OPERAND_SIZE: usize> {
+pub struct ConcreteContext<O: Order, R, const OPERAND_SIZE: usize> {
     translator: Arc<Translator>,
     translator_context: ContextDatabase,
     translator_cache: Arc<RwLock<Map<Address, StepState>>>,
-    hooks: Vec<Box<dyn ClonableHookConcrete<State=ConcreteState<O>, Error=pcode::Error>>>,
+    hooks: Vec<Box<dyn ClonableHookConcrete<State=ConcreteState<O>, Error=pcode::Error, Outcome=R>>>,
     state: ConcreteState<O>,
+    marker: PhantomData<R>,
 }
 
 trait ToSignedBytes {
-    fn expand_as<O: Order, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, { OPERAND_SIZE }>, dest: &Operand, signed: bool) -> Result<(), Error>;
+    fn expand_as<O: Order, R, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, R, { OPERAND_SIZE }>, dest: &Operand, signed: bool) -> Result<(), Error>;
 }
 
 impl ToSignedBytes for bool {
-    fn expand_as<O: Order, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, { OPERAND_SIZE }>, dest: &Operand, _signed: bool) -> Result<(), Error> {
+    fn expand_as<O: Order, R, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, R, { OPERAND_SIZE }>, dest: &Operand, _signed: bool) -> Result<(), Error> {
         let mut buf = [0u8; 1];
         self.into_bytes::<O>(&mut buf);
 
@@ -83,7 +85,7 @@ impl ToSignedBytes for bool {
 }
 
 impl ToSignedBytes for BitVec {
-    fn expand_as<O: Order, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, { OPERAND_SIZE }>, dest: &Operand, signed: bool) -> Result<(), Error> {
+    fn expand_as<O: Order, R, const OPERAND_SIZE: usize>(self, ctxt: &mut ConcreteContext<O, R, { OPERAND_SIZE }>, dest: &Operand, signed: bool) -> Result<(), Error> {
         let size = dest.size();
         let dbits = size << 3;
         let target = if signed { self.signed() } else { self };
@@ -113,7 +115,7 @@ impl ToSignedBytes for BitVec {
     }
 }
 
-impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
+impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OPERAND_SIZE }> {
     pub fn new(translator: Translator, state: ConcreteState<O>) -> Self {
         Self {
             translator_context: translator.context_database(),
@@ -121,15 +123,16 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
             translator: Arc::new(translator),
             hooks: Vec::default(),
             state,
+            marker: PhantomData,
         }
     }
 
     pub fn add_hook<H>(&mut self, hook: H)
-    where H: ClonableHookConcrete<State=ConcreteState<O>, Error=pcode::Error> + 'static {
+    where H: ClonableHookConcrete<State=ConcreteState<O>, Error=pcode::Error, Outcome=R> + 'static {
         self.hooks.push(Box::new(hook));
     }
 
-    fn lift_int1<CO, COO>(&mut self, op: CO, dest: &Operand, rhs: &Operand, signed: bool) -> Result<Outcome, Error>
+    fn lift_int1<CO, COO>(&mut self, op: CO, dest: &Operand, rhs: &Operand, signed: bool) -> Result<Outcome<R>, Error>
     where CO: FnOnce(BitVec) -> Result<COO, Error>,
           COO: ToSignedBytes
     {
@@ -155,7 +158,7 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn lift_int2<CO, COO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand, signed: bool) -> Result<Outcome, Error>
+    fn lift_int2<CO, COO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand, signed: bool) -> Result<Outcome<R>, Error>
     where CO: FnOnce(BitVec, BitVec) -> Result<COO, Error>,
           COO: ToSignedBytes,
     {
@@ -201,7 +204,7 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn lift_bool1<CO>(&mut self, op: CO, dest: &Operand, rhs: &Operand) -> Result<Outcome, Error>
+    fn lift_bool1<CO>(&mut self, op: CO, dest: &Operand, rhs: &Operand) -> Result<Outcome<R>, Error>
     where CO: FnOnce(bool) -> Result<bool, Error>,
     {
         let mut rbuf = [0u8; 1];
@@ -222,7 +225,7 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn lift_bool2<CO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand) -> Result<Outcome, Error>
+    fn lift_bool2<CO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand) -> Result<Outcome<R>, Error>
     where CO: FnOnce(bool, bool) -> Result<bool, Error>,
     {
         let mut lbuf = [0u8; 1];
@@ -249,7 +252,7 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn lift_float1<CO, COO>(&mut self, op: CO, dest: &Operand, rhs: &Operand) -> Result<Outcome, Error>
+    fn lift_float1<CO, COO>(&mut self, op: CO, dest: &Operand, rhs: &Operand) -> Result<Outcome<R>, Error>
     where CO: FnOnce(Float, &FloatFormat) -> Result<COO, Error>,
           COO: ToSignedBytes,
     {
@@ -278,7 +281,7 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn lift_float2<CO, COO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand) -> Result<Outcome, Error>
+    fn lift_float2<CO, COO>(&mut self, op: CO, dest: &Operand, lhs: &Operand, rhs: &Operand) -> Result<Outcome<R>, Error>
     where CO: FnOnce(Float, Float, &FloatFormat) -> Result<COO, Error>,
           COO: ToSignedBytes,
     {
@@ -457,9 +460,10 @@ impl<O: Order, const OPERAND_SIZE: usize> ConcreteContext<O, { OPERAND_SIZE }> {
     }
 }
 
-impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { OPERAND_SIZE }> {
+impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, R, { OPERAND_SIZE }> {
     type State = PCodeState<u8, O>;
     type Error = Error;
+    type Outcome = R;
 
     fn fork(&self) -> Self {
         Self {
@@ -468,6 +472,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             translator_cache: self.translator_cache.clone(),
             hooks: self.hooks.clone(),
             state: self.state.fork(),
+            marker: self.marker,
         }
     }
 
@@ -476,12 +481,12 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         self.state.restore(&other.state);
     }
 
-    fn copy(&mut self, source: &Operand, destination: &Operand) -> Result<Outcome, Error> {
+    fn copy(&mut self, source: &Operand, destination: &Operand) -> Result<Outcome<R>, Error> {
         self.copy_operand(source, destination)?;
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn load(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome, Error> {
+    fn load(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome<R>, Error> {
         let space_size = space.address_size();
         let space_word_size = space.word_size() as u64;
 
@@ -503,7 +508,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn store(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome, Error> {
+    fn store(&mut self, source: &Operand, destination: &Operand, space: Arc<AddressSpace>) -> Result<Outcome<R>, Error> {
         // Same semantics as copy and load, just with different address spaces
         let space_size = space.address_size();
         let space_word_size = space.word_size() as u64;
@@ -534,7 +539,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn branch(&mut self, destination: &Operand) -> Result<Outcome, Error> {
+    fn branch(&mut self, destination: &Operand) -> Result<Outcome<R>, Error> {
         // destination operand does not store branch target, it is branch target
         match destination {
             Operand::Constant { value, .. } => {
@@ -551,7 +556,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         }
     }
 
-    fn cbranch(&mut self, destination: &Operand, condition: &Operand) -> Result<Outcome, Error> {
+    fn cbranch(&mut self, destination: &Operand, condition: &Operand) -> Result<Outcome<R>, Error> {
         assert!(condition.size() == 1);
 
         let mut flip = false;
@@ -559,8 +564,8 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             match hook.hook_cbranch(&mut self.state, destination, condition).map_err(Error::Hook)? {
                 HookCBranchAction::Pass => (),
                 HookCBranchAction::Flip => { flip = true; },
-                HookCBranchAction::Halt => {
-                    return Ok(Outcome::Halt)
+                HookCBranchAction::Halt(r) => {
+                    return Ok(Outcome::Halt(r))
                 },
             }
         }
@@ -586,7 +591,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         self.branch(destination)
     }
 
-    fn ibranch(&mut self, destination: &Operand) -> Result<Outcome, Error> {
+    fn ibranch(&mut self, destination: &Operand) -> Result<Outcome<R>, Error> {
         if destination == self.state.registers().program_counter() {
             return self.icall(destination)
         }
@@ -595,7 +600,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         Ok(Outcome::Branch(Branch::Global(address)))
     }
 
-    fn call(&mut self, destination: &Operand) -> Result<Outcome, Error> {
+    fn call(&mut self, destination: &Operand) -> Result<Outcome<R>, Error> {
         match destination {
             Operand::Address { value, .. } => {
                 let mut skip = false;
@@ -604,8 +609,8 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
                     match hook.hook_call(&mut self.state, &address).map_err(Error::Hook)? {
                         HookCallAction::Pass => (),
                         HookCallAction::Skip => { skip = true; },
-                        HookCallAction::Halt => {
-                            return Ok(Outcome::Halt)
+                        HookCallAction::Halt(r) => {
+                            return Ok(Outcome::Halt(r))
                         },
                     }
                 }
@@ -624,7 +629,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         }
     }
 
-    fn icall(&mut self, destination: &Operand) -> Result<Outcome, Error> {
+    fn icall(&mut self, destination: &Operand) -> Result<Outcome<R>, Error> {
         let address_value = AddressValue::new(
             self.state.memory_space(),
             self.get_address_value(destination)?,
@@ -636,8 +641,8 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             match hook.hook_call(&mut self.state, &address).map_err(Error::Hook)? {
                 HookCallAction::Pass => (),
                 HookCallAction::Skip => { skip = true; },
-                HookCallAction::Halt => {
-                    return Ok(Outcome::Halt)
+                HookCallAction::Halt(r) => {
+                    return Ok(Outcome::Halt(r))
                 },
             }
         }
@@ -649,99 +654,99 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         }
     }
 
-    fn return_(&mut self, destination: &Operand) -> Result<Outcome, Error> {
+    fn return_(&mut self, destination: &Operand) -> Result<Outcome<R>, Error> {
         self.ibranch(destination)
     }
 
-    fn int_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Error> {
+    fn int_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Error> {
         self.lift_int2(|u, v| Ok(u == v), destination, operand1, operand2, false)
     }
 
-    fn int_not_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_not_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u != v), destination, operand1, operand2, false)
     }
 
-    fn int_less(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_less(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u < v), destination, operand1, operand2, false)
     }
 
-    fn int_less_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_less_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u <= v), destination, operand1, operand2, false)
     }
 
-    fn int_sless(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sless(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u < v), destination, operand1, operand2, true)
     }
 
-    fn int_sless_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sless_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u <= v), destination, operand1, operand2, true)
     }
 
-    fn int_zext(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_zext(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int1(|u| Ok(u), destination, operand, false)
     }
 
-    fn int_sext(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sext(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int1(|u| Ok(u), destination, operand, true)
     }
 
-    fn int_add(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_add(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u + v), destination, operand1, operand2, false)
     }
 
-    fn int_sub(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sub(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u - v), destination, operand1, operand2, false)
     }
 
-    fn int_carry(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_carry(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u.carry(&v)), destination, operand1, operand2, false)
     }
 
-    fn int_scarry(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_scarry(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u.carry(&v)), destination, operand1, operand2, true)
     }
 
-    fn int_sborrow(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sborrow(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u.borrow(&v)), destination, operand1, operand2, true)
     }
 
-    fn int_neg(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_neg(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int1(|u| Ok(-u), destination, operand, true)
     }
 
-    fn int_not(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_not(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int1(|u| Ok(!u), destination, operand, false)
     }
 
-    fn int_xor(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_xor(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u ^ v), destination, operand1, operand2, false)
     }
 
-    fn int_and(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_and(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u & v), destination, operand1, operand2, false)
     }
 
-    fn int_or(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_or(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u | v), destination, operand1, operand2, false)
     }
 
-    fn int_left_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_left_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u << v), destination, operand1, operand2, false)
     }
 
-    fn int_right_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_right_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u >> v), destination, operand1, operand2, false)
     }
 
-    fn int_sright_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sright_shift(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u >> v), destination, operand1, operand2, true)
     }
 
-    fn int_mul(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_mul(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(|u, v| Ok(u * v), destination, operand1, operand2, false)
     }
 
-    fn int_div(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_div(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(
             |u, v| if v.is_zero() {
                 Err(Error::DivisionByZero)
@@ -754,7 +759,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             false)
     }
 
-    fn int_sdiv(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_sdiv(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(
             |u, v| if v.is_zero() {
                 Err(Error::DivisionByZero)
@@ -767,7 +772,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             true)
     }
 
-    fn int_rem(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_rem(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(
             |u, v| if v.is_zero() {
                 Err(Error::DivisionByZero)
@@ -780,7 +785,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             false)
     }
 
-    fn int_srem(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn int_srem(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int2(
             |u, v| if v.is_zero() {
                 Err(Error::DivisionByZero)
@@ -793,43 +798,43 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             true)
     }
 
-    fn bool_not(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn bool_not(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_bool1(|u| Ok(!u), destination, operand)
     }
 
-    fn bool_xor(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn bool_xor(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_bool2(|u, v| Ok(u ^ v), destination, operand1, operand2)
     }
 
-    fn bool_and(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn bool_and(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_bool2(|u, v| Ok(u & v), destination, operand1, operand2)
     }
 
-    fn bool_or(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn bool_or(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_bool2(|u, v| Ok(u | v), destination, operand1, operand2)
     }
 
-    fn float_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(|u, v, _fmt| Ok(u == v), destination, operand1, operand2)
     }
 
-    fn float_not_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_not_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(|u, v, _fmt| Ok(u != v), destination, operand1, operand2)
     }
 
-    fn float_less(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_less(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(|u, v, _fmt| Ok(u < v), destination, operand1, operand2)
     }
 
-    fn float_less_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_less_eq(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(|u, v, _fmt| Ok(u <= v), destination, operand1, operand2)
     }
 
-    fn float_is_nan(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_is_nan(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(|u, _fmt| Ok(u.is_nan()), destination, operand)
     }
 
-    fn float_add(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_add(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(
             |u, v, fmt| Ok(fmt.into_bitvec(u + v, fmt.bits())),
             destination,
@@ -837,7 +842,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             operand2)
     }
 
-    fn float_div(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_div(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(
             |u, v, fmt| Ok(fmt.into_bitvec(u / v, fmt.bits())),
             destination,
@@ -845,7 +850,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             operand2)
     }
 
-    fn float_mul(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_mul(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(
             |u, v, fmt| Ok(fmt.into_bitvec(u * v, fmt.bits())),
             destination,
@@ -853,7 +858,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             operand2)
     }
 
-    fn float_sub(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_sub(&mut self, destination: &Operand, operand1: &Operand, operand2: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float2(
             |u, v, fmt| Ok(fmt.into_bitvec(u - v, fmt.bits())),
             destination,
@@ -861,19 +866,19 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             operand2)
     }
 
-    fn float_neg(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_neg(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(|u, fmt| Ok(fmt.into_bitvec(-u, fmt.bits())), destination, operand)
     }
 
-    fn float_abs(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_abs(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(|u, fmt| Ok(fmt.into_bitvec(u.abs(), fmt.bits())), destination, operand)
     }
 
-    fn float_sqrt(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_sqrt(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(|u, fmt| Ok(fmt.into_bitvec(u.sqrt(), fmt.bits())), destination, operand)
     }
 
-    fn float_of_int(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_of_int(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         let fmt = float_format_from_size(destination.size())?;
         self.lift_int1(
             |u| {
@@ -886,7 +891,7 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             true)
     }
 
-    fn float_of_float(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_of_float(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         let fmt = float_format_from_size(destination.size())?;
         self.lift_float1(
             |rhs, _fmt| Ok(fmt.into_bitvec(rhs, fmt.bits())),
@@ -894,35 +899,35 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
             operand)
     }
 
-    fn float_truncate(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_truncate(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(
             |u, _fmt| Ok(u.trunc_into_bitvec(destination.size() * 8)),
             destination,
             operand)
     }
 
-    fn float_ceiling(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_ceiling(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(
             |u, fmt| Ok(fmt.into_bitvec(u.ceil(), fmt.bits())),
             destination,
             operand)
     }
 
-    fn float_floor(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_floor(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(
             |u, fmt| Ok(fmt.into_bitvec(u.floor(), fmt.bits())),
             destination,
             operand)
     }
 
-    fn float_round(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn float_round(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_float1(
             |u, fmt| Ok(fmt.into_bitvec(u.round(), fmt.bits())),
             destination,
             operand)
     }
 
-    fn subpiece(&mut self, destination: &Operand, operand: &Operand, amount: &Operand) -> Result<Outcome, Error> {
+    fn subpiece(&mut self, destination: &Operand, operand: &Operand, amount: &Operand) -> Result<Outcome<R>, Error> {
         let amount_size = amount.size();
         if amount_size > OPERAND_SIZE {
             return Err(Error::UnsupportedOperandSize(amount_size, OPERAND_SIZE))
@@ -966,12 +971,12 @@ impl<O: Order, const OPERAND_SIZE: usize> Interpreter for ConcreteContext<O, { O
         Ok(Outcome::Branch(Branch::Next))
     }
 
-    fn pop_count(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome, Self::Error> {
+    fn pop_count(&mut self, destination: &Operand, operand: &Operand) -> Result<Outcome<R>, Self::Error> {
         self.lift_int1(|u| Ok(BitVec::from(u.count_ones())), destination, operand, false)
     }
 
-    fn intrinsic(&mut self, _name: &str, _operands: &[Operand], _result: Option<&Operand>) -> Result<Outcome, Error> {
-        Ok(Outcome::Halt)
+    fn intrinsic(&mut self, _name: &str, _operands: &[Operand], _result: Option<&Operand>) -> Result<Outcome<R>, Error> {
+        Ok(Outcome::Halt(Default::default()))
     }
 
     fn lift<A>(&mut self, address: A) -> Result<StepState, Error>
