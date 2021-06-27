@@ -252,7 +252,7 @@ impl<I> Machine<I> where I: Interpreter {
         Ok(StepOutcome::Branch(self.step_state.fallthrough()))
     }
 
-    pub fn step_until<A, B>(&mut self, address: A, until: Bound<B>) -> Result<Bound<AddressValue>, I::Error>
+    pub fn step_until<A, B>(&mut self, address: A, until: Bound<B>) -> Result<(Bound<AddressValue>, StepOutcome<I::Outcome>), I::Error>
         where A: IntoAddress,
               B: IntoAddress {
         let space = self.interpreter.interpreter_space();
@@ -261,14 +261,17 @@ impl<I> Machine<I> where I: Interpreter {
 
         while !bound.reached(&address) {
             bound = bound.deplete();
-            if let StepOutcome::Branch(next_address) = self.step(&address)? {
-                address = next_address;
-            } else {
-                break
+            match self.step(&address)? {
+                StepOutcome::Branch(next_address) => {
+                    address = next_address;
+                },
+                v => {
+                    return Ok((bound, v))
+                }
             }
         }
 
-        Ok(bound)
+        Ok((bound, StepOutcome::Reached))
     }
 
     pub fn interpreter(&self) -> &I {

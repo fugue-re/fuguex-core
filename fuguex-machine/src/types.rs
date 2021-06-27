@@ -64,6 +64,7 @@ pub enum Outcome<R> {
 
 pub enum StepOutcome<R> {
     Halt(R),
+    Reached,
     Branch(AddressValue),
 }
 
