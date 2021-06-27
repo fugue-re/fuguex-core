@@ -164,6 +164,14 @@ impl<T: StateValue> AsMut<Self> for PagedState<T> {
 }
 
 impl<T: StateValue> PagedState<T> {
+    pub fn new(
+        mapping: impl IntoIterator<Item = (Range<Address>, Segment<T>)>,
+        space: Arc<AddressSpace>,
+        size: usize
+    ) -> Self {
+        Self::from_parts(mapping, FlatState::new(space, size))
+    }
+
     pub fn from_parts(
         mapping: impl IntoIterator<Item = (Range<Address>, Segment<T>)>,
         backing: FlatState<T>,
