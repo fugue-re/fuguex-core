@@ -1359,11 +1359,24 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
     {
         let address_value = address.into_address_value(self.state.memory_space());
         let address = Address::from(&address_value);
-        let step_state = if let Some(step_state) = self.translator_cache.read().get(&address) {
+
+        log::debug!("lifting at {}", address);
+
+        // begin read lock region
+        let rlock = self.translator_cache.read();
+
+        let cached = rlock.get(&address)
+            .map(|step_state| step_state.clone());
+
+        drop(rlock);
+        // end read lock region
+
+        let step_state = if let Some(step_state) = cached {
             step_state.clone()
         } else {
             // NOTE: possible race here, if another thread populates
             // the same address. We don't really care, I suppose.
+
             let view = self
                 .state
                 .view_values_from(&address)

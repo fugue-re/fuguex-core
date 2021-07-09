@@ -9,5 +9,6 @@ fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
 fuguex-hooks = { path = "../fuguex-hooks" }
 fuguex-machine = { path = "../fuguex-machine" }
 fuguex-state = { path = "../fuguex-state" }
+log = "0.4"
 parking_lot = "0.11"
 thiserror = "1"
