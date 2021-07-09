@@ -33,9 +33,11 @@ impl<I> Machine<I> where I: Interpreter {
 
     pub fn step<A>(&mut self, address: A) -> Result<StepOutcome<I::Outcome>, I::Error>
     where A: IntoAddress {
+        log::debug!("lifting...");
         self.step_state = self.interpreter.lift(address)?;
 
         while let Some(op) = self.step_state.current() {
+            log::debug!("interpreting...");
             let action = match op {
                 PCodeOp::Copy { ref source, ref destination } => {
                     self.interpreter.copy(source, destination)
@@ -239,11 +241,14 @@ impl<I> Machine<I> where I: Interpreter {
 
             match action {
                 Outcome::Halt(outcome) => {
+                    log::debug!("outcome: halt");
                     return Ok(StepOutcome::Halt(outcome))
                 },
                 Outcome::Branch(ref branch) => if let BranchOutcome::Global(address) = self.step_state.branch(branch) {
+                    log::debug!("outcome: branch (global)");
                     return Ok(StepOutcome::Branch(address))
                 } else {
+                    log::debug!("outcome: branch (local)");
                     continue
                 },
             }
