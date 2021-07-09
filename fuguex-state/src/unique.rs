@@ -114,6 +114,9 @@ impl<T: StateValue> UniqueState<T> {
     pub fn new(translator: &Translator) -> Self {
         let space = translator.manager().unique_space();
         let size = translator.unique_space_size();
+
+        log::debug!("unique space size: {} bytes", size);
+
         Self(FlatState::new(space, size))
     }
 }

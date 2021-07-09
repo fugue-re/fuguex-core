@@ -67,6 +67,15 @@ impl<T: StateValue> Segment<T> {
         }
     }
 
+    pub fn allocated_mapping<S: AsRef<str>>(name: S, mut mapping: ChunkState<T>) -> Result<Self, Error> {
+        mapping.allocate_all().map_err(Error::Chunked)?;
+
+        Ok(Self::Mapping {
+            name: name.as_ref().to_string(),
+            backing: mapping,
+        })
+    }
+
     pub fn is_static(&self) -> bool {
         matches!(self, Self::Static { .. })
     }
@@ -182,6 +191,24 @@ impl<T: StateValue> PagedState<T> {
             })),
             inner: backing,
         }
+    }
+
+    // TODO: make this fixed; no need to handle alloc/free
+    pub fn allocated_mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
+    where S: AsRef<str>,
+          A: IntoAddress {
+        let base_address = base_address.into_address(self.inner.address_space().as_ref());
+        let range = base_address..=(base_address + size); // TODO: error for zero-size
+
+        if self.segments.overlaps(range.clone()) {
+            return Err(Error::OverlappedMapping {
+                address: base_address,
+                size,
+            })
+        }
+
+        self.segments.insert(range, Segment::allocated_mapping(name, ChunkState::new(self.inner.address_space(), base_address, size + 1))?);
+        Ok(())
     }
 
     pub fn mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>

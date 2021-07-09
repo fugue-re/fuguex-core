@@ -170,7 +170,8 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
     }
 
     pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand) -> Result<V, Error> {
-        self.with_operand_values(operand, |values| V::from_values::<O>(values))
+        let res = self.with_operand_values(operand, |values| V::from_values::<O>(values));
+        res
     }
 
     pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand, value: V) -> Result<(), Error> {

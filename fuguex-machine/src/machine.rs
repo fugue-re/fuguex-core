@@ -37,7 +37,7 @@ impl<I> Machine<I> where I: Interpreter {
         self.step_state = self.interpreter.lift(address)?;
 
         while let Some(op) = self.step_state.current() {
-            log::debug!("interpreting...");
+            log::debug!("interpreting: {}", op);
             let action = match op {
                 PCodeOp::Copy { ref source, ref destination } => {
                     self.interpreter.copy(source, destination)

@@ -8,4 +8,5 @@ edition = "2018"
 fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
 fuguex-state-derive = { path = "../fuguex-state-derive" }
 interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree" }
+log = "0.4"
 thiserror = "1"

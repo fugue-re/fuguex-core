@@ -156,6 +156,8 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         let space = translator.manager().register_space();
         let size = translator.register_space_size();
 
+        log::debug!("register space size: {} bytes", size);
+
         Self {
             inner: FlatState::new(space, size),
             program_counter,

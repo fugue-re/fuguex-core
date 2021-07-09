@@ -281,6 +281,10 @@ impl<T: StateValue> ChunkState<T> {
         self.allocate_with(size, |_, _| ())
     }
 
+    pub fn allocate_all(&mut self) -> Result<(), Error> {
+        self.allocate_with(self.len() - 1, |_, _| ()).map(|_| ())
+    }
+
     #[inline]
     pub fn allocate_with<F>(&mut self, size: usize, f: F) -> Result<Address, Error>
     where F: FnOnce(Address, &mut [T]) {
