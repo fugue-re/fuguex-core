@@ -50,6 +50,19 @@ impl Error {
 pub enum Segment<T: StateValue> {
     Static { name: String, offset: usize },
     Mapping { name: String, backing: ChunkState<T> },
+    StaticMapping { name: String, backing: FlatState<T> },
+}
+
+#[derive(Debug, Clone)]
+pub enum MappingRef<'a, T: StateValue> {
+    Dynamic(&'a ChunkState<T>),
+    Static(&'a FlatState<T>),
+}
+
+#[derive(Debug, Clone)]
+pub enum MappingMut<'a, T: StateValue> {
+    Dynamic(&'a ChunkState<T>),
+    Static(&'a FlatState<T>),
 }
 
 impl<T: StateValue> Segment<T> {
@@ -67,13 +80,11 @@ impl<T: StateValue> Segment<T> {
         }
     }
 
-    pub fn allocated_mapping<S: AsRef<str>>(name: S, mut mapping: ChunkState<T>) -> Result<Self, Error> {
-        mapping.allocate_all().map_err(Error::Chunked)?;
-
-        Ok(Self::Mapping {
+    pub fn static_mapping<S: AsRef<str>>(name: S, mapping: FlatState<T>) -> Self {
+        Self::StaticMapping {
             name: name.as_ref().to_string(),
             backing: mapping,
-        })
+        }
     }
 
     pub fn is_static(&self) -> bool {
@@ -84,25 +95,27 @@ impl<T: StateValue> Segment<T> {
         matches!(self, Self::Mapping { .. })
     }
 
-    pub fn as_mapping(&self) -> Option<&ChunkState<T>> {
-        if let Self::Mapping { ref backing, .. } = self {
-            Some(backing)
-        } else {
-            None
+    pub fn as_mapping(&self) -> Option<MappingRef<T>> {
+        match self {
+            Self::Mapping { ref backing, .. } => Some(MappingRef::Dynamic(backing)),
+            Self::StaticMapping { ref backing, .. } => Some(MappingRef::Static(backing)),
+            _ => None,
         }
     }
 
-    pub fn as_mapping_mut(&mut self) -> Option<&mut ChunkState<T>> {
-        if let Self::Mapping { ref mut backing, .. } = self {
-            Some(backing)
-        } else {
-            None
+    pub fn as_mapping_mut(&mut self) -> Option<MappingMut<T>> {
+        match self {
+            Self::Mapping { ref mut backing, .. } => Some(MappingMut::Dynamic(backing)),
+            Self::StaticMapping { ref mut backing, .. } => Some(MappingMut::Static(backing)),
+            _ => None,
         }
     }
 
     pub fn name(&self) -> &str {
         match self {
-            Self::Static { name, .. } | Self::Mapping { name, .. } => name,
+            Self::Static { name, .. }
+            | Self::Mapping { name, .. }
+            | Self::StaticMapping { name, .. } => name,
         }
     }
 
@@ -110,6 +123,10 @@ impl<T: StateValue> Segment<T> {
         match self {
             Self::Static { .. } => self.clone(),
             Self::Mapping { name, backing } => Self::Mapping {
+                name: name.clone(),
+                backing: backing.fork(),
+            },
+            Self::StaticMapping { name, backing } => Self::StaticMapping {
                 name: name.clone(),
                 backing: backing.fork(),
             },
@@ -138,6 +155,18 @@ impl<T: StateValue> Segment<T> {
                            backing.len(),
                            rname,
                            rbacking.base_address(),
+                           rbacking.len(),
+                    );
+                }
+
+                backing.restore(rbacking);
+            },
+            (Self::StaticMapping { name, backing }, Self::StaticMapping { name: rname, backing: rbacking }) => {
+                if name != rname || backing.len() != rbacking.len() {
+                    panic!("attempting to restore segment `{}` of size {} from incompatible segment `{}` of size {}",
+                           name,
+                           backing.len(),
+                           rname,
                            rbacking.len(),
                     );
                 }
@@ -193,8 +222,7 @@ impl<T: StateValue> PagedState<T> {
         }
     }
 
-    // TODO: make this fixed; no need to handle alloc/free
-    pub fn allocated_mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
+    pub fn static_mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
     where S: AsRef<str>,
           A: IntoAddress {
         let base_address = base_address.into_address(self.inner.address_space().as_ref());
@@ -207,7 +235,7 @@ impl<T: StateValue> PagedState<T> {
             })
         }
 
-        self.segments.insert(range, Segment::allocated_mapping(name, ChunkState::new(self.inner.address_space(), base_address, size + 1))?);
+        self.segments.insert(range, Segment::static_mapping(name, FlatState::new(self.inner.address_space(), size)));
         Ok(())
     }
 
@@ -240,14 +268,14 @@ impl<T: StateValue> PagedState<T> {
         })
     }
 
-    pub fn mapping_for<A>(&self, address: A) -> Option<&ChunkState<T>>
+    pub fn mapping_for<A>(&self, address: A) -> Option<MappingRef<T>>
     where A: IntoAddress {
         let address = address.into_address(self.inner.address_space().as_ref());
         self.segments.find(address)
             .and_then(|e| e.value().as_mapping())
     }
 
-    pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<&mut ChunkState<T>>
+    pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<MappingMut<T>>
     where A: IntoAddress {
         let address = address.into_address(self.inner.address_space().as_ref());
         self.segments.find_mut(address)
@@ -290,6 +318,10 @@ impl<T: StateValue> PagedState<T> {
                         .map_err(Error::Chunked)?;
                     f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
                 },
+                Segment::StaticMapping { ref backing, .. } => {
+                    let translated = address - *principal.interval().start();
+                    f(backing, translated.into_address(self.inner.address_space().as_ref()), access_size)
+                },
                 Segment::Static { offset, .. } => {
                     let address = (address - *principal.interval().start()) + *offset;
                     f(&self.inner, address.into_address(self.inner.address_space().as_ref()), access_size)
@@ -319,6 +351,10 @@ impl<T: StateValue> PagedState<T> {
                         .map_err(Error::Chunked)?;
                     f(backing.inner_mut(), translated.into_address(space.as_ref()), access_size)
                 },
+                Segment::StaticMapping { ref mut backing, .. } => {
+                    let translated = address - *interval.start();
+                    f(backing, translated.into_address(space.as_ref()), access_size)
+                },
                 Segment::Static { offset, .. } => {
                     let address = (address - *interval.start()) + *offset;
                     f(&mut self.inner, address.into_address(space.as_ref()), access_size)
@@ -343,15 +379,28 @@ impl<T: StateValue> PagedState<T> {
 
             match principal.value() {
                 Segment::Mapping { ref backing, .. } => {
-                    let access_size = backing.len();
+                    // TODO: Chunked::available_len (view whole allocation)
+                    let access_size = backing.len(); // FIXME: should this be -1 due to the red-zone?
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
                     f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
                 },
+                Segment::StaticMapping { ref backing, .. } => {
+                    let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
+                    let address = address - *principal.interval().start();
+
+                    let access_size = max_access_size - usize::from(address);
+
+                    f(backing, address.into_address(self.inner.address_space_ref()), access_size)
+                },
                 Segment::Static { offset, .. } => {
-                    let access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
-                    let address = (address - *principal.interval().start()) + *offset;
-                    f(&self.inner, address.into_address(self.inner.address_space().as_ref()), access_size)
+                    let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
+                    let offset_in = address - *principal.interval().start();
+
+                    let address = offset_in + *offset;
+                    let access_size = max_access_size - usize::from(offset_in);
+
+                    f(&self.inner, address.into_address(self.inner.address_space_ref()), access_size)
                 },
             }
         } else {
