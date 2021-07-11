@@ -164,6 +164,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
 
         database.functions().par_iter().try_for_each(|f| {
             let mut translator_context = context.clone();
+            let mut current = Map::<Address, StepState>::default();
             // ...with at least one block
             if !f.blocks().is_empty() {
                 // ...where those blocks are not inside an `external` section
@@ -197,9 +198,10 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
                         let lifted = lifted.unwrap();
 
                         offset += lifted.length();
-                        cache.write().insert(address, lifted.into());
+                        current.insert(address, lifted.into());
                     }
                 }
+                cache.write().extend(current.into_iter());
             }
             Ok(())
         })
