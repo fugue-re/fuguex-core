@@ -370,7 +370,7 @@ impl<T: StateValue> PagedState<T> {
           F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
         let address = address.into_address(self.inner.address_space().as_ref());
         if let Some(principal) = self.segments.find(&address) {
-            if address == *principal.interval().end() {
+            if address > *principal.interval().end() {
                 return Err(Error::OverlappedAccess {
                     address,
                     size: 1,

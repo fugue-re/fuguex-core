@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
+use fugue::db::Database;
 use parking_lot::RwLock;
 
 use fugue::bytes::traits::ByteCast;
@@ -28,6 +29,7 @@ use fuguex_state::pcode::{
 use fuguex_state::register::ReturnLocation;
 use fuguex_state::traits::State;
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -36,8 +38,8 @@ pub enum Error {
     DivisionByZero,
     #[error(transparent)]
     Hook(fuguex_hooks::types::Error<pcode::Error>),
-    #[error(transparent)]
-    Lift(#[from] ir::error::Error),
+    #[error("error lifting instruction at {0}: {1}")]
+    Lift(Address, #[source] ir::error::Error),
     #[error(transparent)]
     State(#[from] pcode::Error),
     #[error("incompatible operand sizes of {0} bytes and {1} bytes")]
@@ -152,6 +154,55 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
             + 'static,
     {
         self.hooks.push(Box::new(hook));
+    }
+
+    pub fn lift_blocks_from(&mut self, database: &Database) -> Result<(), Error> {
+        let state = &self.state;
+        let trans = self.translator.clone();
+        let context = &self.translator_context;
+        let cache = self.translator_cache.clone();
+
+        database.functions().par_iter().try_for_each(|f| {
+            let mut translator_context = context.clone();
+            // ...with at least one block
+            if !f.blocks().is_empty() {
+                // ...where those blocks are not inside an `external` section
+                for b in f.blocks().iter().filter(|b| !b.segment().is_external()) {
+                    // ...disassemble the block
+                    let mut offset = 0;
+                    let address = b.address();
+
+                    let view = state
+                        .view_values_from(&address)
+                        .map_err(Error::State)?;
+
+                    while offset < b.len() {
+                        let address_offset = address + offset as u64;
+                        let address_value = trans.address(address_offset.into());
+
+                        let address = Address::from(&address_value);
+
+                        let lifted = trans.lift_pcode(&mut translator_context,
+                                        address_value.clone(),
+                                        &view[offset..])
+                            .map_err(|e| Error::Lift(address, e));
+
+                        if let Err(e) = lifted {
+                            if let Ok(dis) = trans.disassemble(&mut translator_context, address_value, &view[offset..]) {
+                                    println!("failed on: {} {}", dis.mnemonic(), dis.operands());
+                                }
+                            return Err(e)
+                        }
+
+                        let lifted = lifted.unwrap();
+
+                        offset += lifted.length();
+                        cache.write().insert(address, lifted.into());
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     fn lift_int1<CO, COO>(
@@ -1384,7 +1435,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
             let step_state = StepState::from(
                 self.translator
                     .lift_pcode(&mut self.translator_context, address_value, view)
-                    .map_err(Error::Lift)?,
+                    .map_err(|e| Error::Lift(address, e))?
             );
 
             self.translator_cache
