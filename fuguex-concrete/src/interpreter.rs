@@ -29,7 +29,8 @@ use fuguex_state::pcode::{
 use fuguex_state::register::ReturnLocation;
 use fuguex_state::traits::State;
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::ParallelIterator;
+use rayon::slice::ParallelSlice;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -162,47 +163,49 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
         let context = &self.translator_context;
         let cache = self.translator_cache.clone();
 
-        database.functions().par_iter().try_for_each(|f| {
+        database.functions().par_chunks(256).try_for_each(|fns| {
             let mut translator_context = context.clone();
-            let mut current = Map::<Address, StepState>::default();
-            // ...with at least one block
-            if !f.blocks().is_empty() {
-                // ...where those blocks are not inside an `external` section
-                for b in f.blocks().iter().filter(|b| !b.segment().is_external()) {
-                    // ...disassemble the block
-                    let mut offset = 0;
-                    let address = b.address();
+            let mut current = Map::default();
+            for f in fns.iter() {
+                // ...with at least one block
+                if !f.blocks().is_empty() {
+                    // ...where those blocks are not inside an `external` section
+                    for b in f.blocks().iter().filter(|b| !b.segment().is_external()) {
+                        // ...disassemble the block
+                        let mut offset = 0;
+                        let address = b.address();
 
-                    let view = state
-                        .view_values_from(&address)
-                        .map_err(Error::State)?;
+                        let view = state
+                            .view_values_from(&address)
+                            .map_err(Error::State)?;
 
-                    while offset < b.len() {
-                        let address_offset = address + offset as u64;
-                        let address_value = trans.address(address_offset.into());
+                        while offset < b.len() {
+                            let address_offset = address + offset as u64;
+                            let address_value = trans.address(address_offset.into());
 
-                        let address = Address::from(&address_value);
+                            let address = Address::from(&address_value);
 
-                        let lifted = trans.lift_pcode(&mut translator_context,
-                                        address_value.clone(),
-                                        &view[offset..])
-                            .map_err(|e| Error::Lift(address, e));
+                            let lifted = trans.lift_pcode(&mut translator_context,
+                                            address_value.clone(),
+                                            &view[offset..])
+                                .map_err(|e| Error::Lift(address, e));
 
-                        if let Err(e) = lifted {
-                            if let Ok(dis) = trans.disassemble(&mut translator_context, address_value, &view[offset..]) {
-                                    println!("failed on: {} {}", dis.mnemonic(), dis.operands());
-                                }
-                            return Err(e)
+                            if let Err(e) = lifted {
+                                if let Ok(dis) = trans.disassemble(&mut translator_context, address_value, &view[offset..]) {
+                                        println!("failed on: {} {}", dis.mnemonic(), dis.operands());
+                                    }
+                                return Err(e)
+                            }
+
+                            let lifted = lifted.unwrap();
+
+                            offset += lifted.length();
+                            current.insert(address, lifted.into());
                         }
-
-                        let lifted = lifted.unwrap();
-
-                        offset += lifted.length();
-                        current.insert(address, lifted.into());
                     }
                 }
-                cache.write().extend(current.into_iter());
             }
+            cache.write().extend(current.into_iter());
             Ok(())
         })
     }
