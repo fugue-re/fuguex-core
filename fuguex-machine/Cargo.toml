@@ -7,4 +7,5 @@ edition = "2018"
 fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
 fuguex-state = { path = "../fuguex-state" }
 log = "0.4"
+serde = { version = "1", features = ["derive"] }
 thiserror = "1"
