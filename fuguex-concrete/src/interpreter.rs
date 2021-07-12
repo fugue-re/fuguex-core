@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
 use fugue::db::Database;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 
 use fugue::bytes::traits::ByteCast;
 use fugue::bytes::Order;
@@ -208,6 +208,10 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
             cache.write().extend(current.into_iter());
             Ok(())
         })
+    }
+
+    pub fn lifted_cache(&self) -> RwLockReadGuard<Map<Address, StepState>> {
+        self.translator_cache.read()
     }
 
     fn lift_int1<CO, COO>(
