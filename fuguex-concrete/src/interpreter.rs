@@ -687,6 +687,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
             match hook
                 .hook_cbranch(&mut self.state, destination, condition)
                 .map_err(Error::Hook)?
+                .action
             {
                 HookCBranchAction::Pass => (),
                 HookCBranchAction::Flip => {
@@ -738,6 +739,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
                     match hook
                         .hook_call(&mut self.state, &address)
                         .map_err(Error::Hook)?
+                        .action
                     {
                         HookCallAction::Pass => (),
                         HookCallAction::Skip => {
@@ -773,6 +775,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
             match hook
                 .hook_call(&mut self.state, &address)
                 .map_err(Error::Hook)?
+                .action
             {
                 HookCallAction::Pass => (),
                 HookCallAction::Skip => {

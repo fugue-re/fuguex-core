@@ -15,7 +15,7 @@ use crate::traits::{
     HookCall,
     HookCBranch,
 };
-use crate::types::{Error, HookAction, HookCBranchAction, HookCallAction};
+use crate::types::{Error, HookAction, HookCBranchAction, HookCallAction, HookOutcome};
 
 #[allow(unused)]
 pub trait HookConcrete: Hook {
@@ -24,8 +24,8 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookAction::Pass)
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookAction::Pass.into())
     }
 
     fn hook_memory_write(
@@ -33,8 +33,8 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         address: &Address,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookAction::Pass)
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookAction::Pass.into())
     }
 
     fn hook_register_read(
@@ -42,8 +42,8 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookAction::Pass)
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookAction::Pass.into())
     }
 
     fn hook_register_write(
@@ -51,8 +51,8 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         register: &Register,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookAction::Pass)
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookAction::Pass.into())
     }
 
     fn hook_operand_read(
@@ -60,7 +60,7 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         operand: &Operand,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         match operand {
             Operand::Address { value: address, .. } => {
                 self.hook_memory_read(state, &address.into(), value)
@@ -68,7 +68,7 @@ pub trait HookConcrete: Hook {
             Operand::Register { .. } => {
                 self.hook_register_read(state, &operand.register().unwrap(), value)
             },
-            _ => Ok(HookAction::Pass)
+            _ => Ok(HookAction::Pass.into())
         }
     }
 
@@ -77,7 +77,7 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         operand: &Operand,
         value: &[<Self::State as State>::Value]
-    ) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         match operand {
             Operand::Address { value: address, .. } => {
                 self.hook_memory_write(state, &address.into(), value)
@@ -85,7 +85,7 @@ pub trait HookConcrete: Hook {
             Operand::Register { .. } => {
                 self.hook_register_write(state, &operand.register().unwrap(), value)
             },
-            _ => Ok(HookAction::Pass)
+            _ => Ok(HookAction::Pass.into())
         }
     }
 
@@ -93,8 +93,8 @@ pub trait HookConcrete: Hook {
         &mut self,
         state: &mut Self::State,
         destination: &Address,
-    ) -> Result<HookCallAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookCallAction::Pass)
+    ) -> Result<HookOutcome<HookCallAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookCallAction::Pass.into())
     }
 
     fn hook_cbranch(
@@ -102,43 +102,43 @@ pub trait HookConcrete: Hook {
         state: &mut Self::State,
         destination: &Operand,
         condition: &Operand,
-    ) -> Result<HookCBranchAction<Self::Outcome>, Error<Self::Error>> {
-        Ok(HookCBranchAction::Pass)
+    ) -> Result<HookOutcome<HookCBranchAction<Self::Outcome>>, Error<Self::Error>> {
+        Ok(HookCBranchAction::Pass.into())
     }
 }
 
 impl<T> HookMemoryRead for T where T: HookConcrete {
-    fn hook_memory_read(&mut self, state: &mut Self::State, address: &Address, value: &[<Self::State as State>::Value]) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_memory_read(&mut self, state: &mut Self::State, address: &Address, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_memory_read(self, state, address, value)
     }
 }
 
 impl<T> HookMemoryWrite for T where T: HookConcrete {
-    fn hook_memory_write(&mut self, state: &mut Self::State, address: &Address, value: &[<Self::State as State>::Value]) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_memory_write(&mut self, state: &mut Self::State, address: &Address, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_memory_write(self, state, address, value)
     }
 }
 
 impl<T> HookRegisterRead for T where T: HookConcrete {
-    fn hook_register_read(&mut self, state: &mut Self::State, register: &Register, value: &[<Self::State as State>::Value]) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_register_read(&mut self, state: &mut Self::State, register: &Register, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_register_read(self, state, register, value)
     }
 }
 
 impl<T> HookRegisterWrite for T where T: HookConcrete {
-    fn hook_register_write(&mut self, state: &mut Self::State, register: &Register, value: &[<Self::State as State>::Value]) -> Result<HookAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_register_write(&mut self, state: &mut Self::State, register: &Register, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_register_write(self, state, register, value)
     }
 }
 
 impl<T> HookCall for T where T: HookConcrete {
-    fn hook_call(&mut self, state: &mut Self::State, destination: &Address) -> Result<HookCallAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_call(&mut self, state: &mut Self::State, destination: &Address) -> Result<HookOutcome<HookCallAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_call(self, state, destination)
     }
 }
 
 impl<T> HookCBranch for T where T: HookConcrete {
-    fn hook_cbranch(&mut self, state: &mut Self::State, destination: &Operand, condition: &Operand) -> Result<HookCBranchAction<Self::Outcome>, Error<Self::Error>> {
+    fn hook_cbranch(&mut self, state: &mut Self::State, destination: &Operand, condition: &Operand) -> Result<HookOutcome<HookCBranchAction<Self::Outcome>>, Error<Self::Error>> {
         <Self as HookConcrete>::hook_cbranch(self, state, destination, condition)
     }
 }

@@ -17,6 +17,23 @@ pub enum HookCallAction<R> {
     Halt(R),
 }
 
+pub struct HookOutcome<A> {
+    pub action: A,
+    pub state_changed: bool,
+}
+
+impl<A> From<A> for HookOutcome<A> {
+    fn from(action: A) -> Self {
+        Self { action, state_changed: false }
+    }
+}
+
+impl<A> HookOutcome<A> {
+    pub fn state_changed(self, changed: bool) -> Self {
+        Self { state_changed: changed, ..self }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Error<E: std::error::Error + Send + Sync + 'static> {
     #[error(transparent)]
