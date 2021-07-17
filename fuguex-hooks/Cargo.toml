@@ -2,10 +2,11 @@
 name = "fuguex-hooks"
 version = "0.1.0"
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
 dyn-clone = "1"
-fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
-fuguex-state = { path = "../fuguex-state" }
+fugue = { version = "0.1", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.1", registry = "fugue" }
 thiserror = "1"

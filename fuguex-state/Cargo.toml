@@ -3,10 +3,11 @@ name = "fuguex-state"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
-fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
-fuguex-state-derive = { path = "../fuguex-state-derive" }
-interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree" }
+fugue = { version = "0.1", registry = "fugue" }
+fuguex-state-derive = { path = "../fuguex-state-derive", version = "0.1", registry = "fugue" }
+interval-tree = { version = "0.1", registry = "fugue" }
 log = "0.4"
 thiserror = "1"

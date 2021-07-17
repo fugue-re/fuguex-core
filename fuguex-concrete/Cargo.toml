@@ -2,13 +2,14 @@
 name = "fuguex-concrete"
 version = "0.1.0"
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 fnv = "1"
-fugue = { git = "ssh://git@git.simulacra.to:10022/fugue/fugue-core" }
-fuguex-hooks = { path = "../fuguex-hooks" }
-fuguex-machine = { path = "../fuguex-machine" }
-fuguex-state = { path = "../fuguex-state" }
+fugue = { version = "0.1", registry = "fugue" }
+fuguex-hooks = { path = "../fuguex-hooks", version = "0.1", registry = "fugue" }
+fuguex-machine = { path = "../fuguex-machine", version = "0.1", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.1", registry = "fugue" }
 log = "0.4"
 parking_lot = "0.11"
 rayon = "1.5"

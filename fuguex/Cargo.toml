@@ -2,12 +2,13 @@
 name = "fuguex"
 version = "0.1.0"
 edition = "2018"
+license = "MIT"
 
 [features]
 concrete = ["fuguex-concrete"]
 
 [dependencies]
-fuguex-concrete = { optional = true, path = "../fuguex-concrete" }
-fuguex-hooks = { path = "../fuguex-hooks" }
-fuguex-machine = { path = "../fuguex-machine" }
-fuguex-state = { path = "../fuguex-state" }
+fuguex-concrete = { optional = true, path = "../fuguex-concrete", version = "0.1", registry = "fugue" }
+fuguex-hooks = { path = "../fuguex-hooks", version = "0.1", registry = "fugue" }
+fuguex-machine = { path = "../fuguex-machine", version = "0.1", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.1", registry = "fugue" }
