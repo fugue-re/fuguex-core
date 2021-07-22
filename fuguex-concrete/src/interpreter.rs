@@ -236,16 +236,16 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
             return Err(Error::UnsupportedOperandSize(rsize, OPERAND_SIZE));
         }
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         let mut rbuf = [0u8; OPERAND_SIZE];
 
         self.state
             .with_operand_values(rhs, |values| rbuf[..rsize].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..rsize])
-                .map_err(Error::Hook)?;
-        }
 
         op(BitVec::from_bytes::<O>(&rbuf[..rsize], signed))?.expand_as(self, dest, signed)?;
 
@@ -278,20 +278,23 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
             return Err(Error::UnsupportedOperandSize(rsize, OPERAND_SIZE));
         }
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, lhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(lhs, |values| lbuf[..lsize].copy_from_slice(values))
             .map_err(Error::State)?;
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(rhs, |values| rbuf[..rsize].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, lhs, &lbuf[..lsize])
-                .map_err(Error::Hook)?;
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..rsize])
-                .map_err(Error::Hook)?;
-        }
 
         let lhs_val = BitVec::from_bytes::<O>(&lbuf[..lsize], signed);
         let mut rhs_val = BitVec::from_bytes::<O>(&rbuf[..rsize], signed);
@@ -312,14 +315,14 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
         let mut rbuf = [0u8; 1];
         let rsize = rhs.size();
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(rhs, |values| rbuf[..rsize].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..rsize])
-                .map_err(Error::Hook)?;
-        }
 
         op(bool::from_bytes::<O>(&rbuf))?.expand_as(self, dest, false)?;
 
@@ -339,20 +342,23 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
         let mut lbuf = [0u8; 1];
         let mut rbuf = [0u8; 1];
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, lhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(lhs, |values| lbuf[..].copy_from_slice(values))
             .map_err(Error::State)?;
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(rhs, |values| rbuf[..].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, lhs, &lbuf[..])
-                .map_err(Error::Hook)?;
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..])
-                .map_err(Error::Hook)?;
-        }
 
         op(
             bool::from_bytes::<O>(&lbuf[..]),
@@ -381,14 +387,14 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
         let format = float_format_from_size(rsize)?;
         let mut rbuf = [0u8; OPERAND_SIZE];
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(rhs, |values| rbuf[..rsize].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..rsize])
-                .map_err(Error::Hook)?;
-        }
 
         let rhs_val = format.from_bitvec(&BitVec::from_bytes::<O>(&rbuf[..rsize], false));
 
@@ -428,20 +434,23 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
 
         let format = float_format_from_size(rsize)?;
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, lhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(lhs, |values| lbuf[..lsize].copy_from_slice(values))
             .map_err(Error::State)?;
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, rhs)
+                .map_err(Error::Hook)?;
+        }
+
         self.state
             .with_operand_values(rhs, |values| rbuf[..rsize].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, lhs, &lbuf[..lsize])
-                .map_err(Error::Hook)?;
-            hook.hook_operand_read(&mut self.state, rhs, &rbuf[..rsize])
-                .map_err(Error::Hook)?;
-        }
 
         let lhs_val = format.from_bitvec(&BitVec::from_bytes::<O>(&lbuf[..lsize], false));
         let rhs_val = format.from_bitvec(&BitVec::from_bytes::<O>(&rbuf[..rsize], false));
@@ -505,6 +514,11 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
         let mut buf = [0u8; MAX_POINTER_SIZE];
         let psize = pointer.size();
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, pointer)
+                .map_err(Error::Hook)?;
+        }
+
         let address = if psize == POINTER_64_SIZE {
             self.state
                 .with_operand_values(pointer, |values| {
@@ -537,11 +551,6 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
             return Err(Error::UnsupportedAddressSize(pointer.size()));
         };
 
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, pointer, &buf[..psize])
-                .map_err(Error::Hook)?;
-        }
-
         Ok(address)
     }
 
@@ -552,15 +561,15 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O,
             return Err(Error::UnsupportedOperandSize(size, OPERAND_SIZE));
         }
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, source)
+                .map_err(Error::Hook)?;
+        }
+
         let mut buf = [0u8; OPERAND_SIZE];
         self.state
             .with_operand_values(source, |values| buf[..size].copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, source, &buf[..size])
-                .map_err(Error::Hook)?;
-        }
 
         self.state
             .with_operand_values_mut(destination, |values| values.copy_from_slice(&buf[..size]))
@@ -704,15 +713,15 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> Interpreter
             }
         }
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, condition)
+                .map_err(Error::Hook)?;
+        }
+
         let mut buf = [0u8; 1];
         self.state
             .with_operand_values(condition, |values| buf.copy_from_slice(values))
             .map_err(Error::State)?;
-
-        for hook in self.hooks.iter_mut() {
-            hook.hook_operand_read(&mut self.state, condition, &buf)
-                .map_err(Error::Hook)?;
-        }
 
         if flip {
             if bool::from_bytes::<O>(&buf) {
@@ -1373,6 +1382,11 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> Interpreter
             ));
         }
 
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, amount)
+                .map_err(Error::Hook)?;
+        }
+
         let mut buf = [0u8; OPERAND_SIZE];
         self.state
             .with_operand_values(amount, |values| buf[..amount_size].copy_from_slice(values))
@@ -1384,6 +1398,11 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> Interpreter
 
         let mut input_buf = [0u8; OPERAND_SIZE];
         let input_view = &mut input_buf[..input_size];
+
+        for hook in self.hooks.iter_mut() {
+            hook.hook_operand_read(&mut self.state, operand)
+                .map_err(Error::Hook)?;
+        }
 
         self.state
             .with_operand_values(operand, |values| input_view.copy_from_slice(values))
@@ -1420,6 +1439,8 @@ impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> Interpreter
         operands: &[Operand],
         result: Option<&Operand>,
     ) -> Result<Outcome<R>, Error> {
+        // TODO: should we trigger operand read events on intrinsics?
+
         let outcome = self.intrinsics.handle(name, &mut self.state, operands, result)
             .map_err(Error::Intrinsic)?;
 

@@ -16,7 +16,6 @@ pub trait HookMemoryRead: Hook {
         &mut self,
         state: &mut Self::State,
         address: &Address,
-        value: &[<Self::State as State>::Value]
     ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>>;
 }
 
@@ -34,7 +33,6 @@ pub trait HookRegisterRead: Hook {
         &mut self,
         state: &mut Self::State,
         register: &Register,
-        value: &[<Self::State as State>::Value]
     ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>>;
 }
 

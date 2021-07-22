@@ -23,7 +23,6 @@ pub trait HookConcrete: Hook {
         &mut self,
         state: &mut Self::State,
         address: &Address,
-        value: &[<Self::State as State>::Value]
     ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         Ok(HookAction::Pass.into())
     }
@@ -41,7 +40,6 @@ pub trait HookConcrete: Hook {
         &mut self,
         state: &mut Self::State,
         register: &Register,
-        value: &[<Self::State as State>::Value]
     ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         Ok(HookAction::Pass.into())
     }
@@ -59,14 +57,13 @@ pub trait HookConcrete: Hook {
         &mut self,
         state: &mut Self::State,
         operand: &Operand,
-        value: &[<Self::State as State>::Value]
     ) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
         match operand {
             Operand::Address { value: address, .. } => {
-                self.hook_memory_read(state, &address.into(), value)
+                self.hook_memory_read(state, &address.into())
             },
             Operand::Register { .. } => {
-                self.hook_register_read(state, &operand.register().unwrap(), value)
+                self.hook_register_read(state, &operand.register().unwrap())
             },
             _ => Ok(HookAction::Pass.into())
         }
@@ -108,8 +105,8 @@ pub trait HookConcrete: Hook {
 }
 
 impl<T> HookMemoryRead for T where T: HookConcrete {
-    fn hook_memory_read(&mut self, state: &mut Self::State, address: &Address, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
-        <Self as HookConcrete>::hook_memory_read(self, state, address, value)
+    fn hook_memory_read(&mut self, state: &mut Self::State, address: &Address) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        <Self as HookConcrete>::hook_memory_read(self, state, address)
     }
 }
 
@@ -120,8 +117,8 @@ impl<T> HookMemoryWrite for T where T: HookConcrete {
 }
 
 impl<T> HookRegisterRead for T where T: HookConcrete {
-    fn hook_register_read(&mut self, state: &mut Self::State, register: &Register, value: &[<Self::State as State>::Value]) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
-        <Self as HookConcrete>::hook_register_read(self, state, register, value)
+    fn hook_register_read(&mut self, state: &mut Self::State, register: &Register) -> Result<HookOutcome<HookAction<Self::Outcome>>, Error<Self::Error>> {
+        <Self as HookConcrete>::hook_register_read(self, state, register)
     }
 }
 
