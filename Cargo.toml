@@ -2,6 +2,7 @@
 members = [
   "fuguex-concrete",
   "fuguex-hooks",
+  "fuguex-intrinsics",
   "fuguex-machine",
   "fuguex-state",
   "fuguex-state-derive",

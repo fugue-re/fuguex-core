@@ -18,6 +18,8 @@ use fugue::ir::{self, Address, AddressSpace, AddressValue, IntoAddress, Translat
 use fuguex_hooks::concrete::ClonableHookConcrete;
 use fuguex_hooks::types::{HookCBranchAction, HookCallAction};
 
+use fuguex_intrinsics::{IntrinsicAction, IntrinsicHandler};
+
 use fuguex_machine::types::Outcome;
 use fuguex_machine::StepState;
 use fuguex_machine::{Branch, Interpreter};
@@ -39,6 +41,8 @@ pub enum Error {
     DivisionByZero,
     #[error(transparent)]
     Hook(fuguex_hooks::types::Error<pcode::Error>),
+    #[error(transparent)]
+    Intrinsic(fuguex_intrinsics::Error<pcode::Error>),
     #[error("error lifting instruction at {0}: {1}")]
     Lift(Address, #[source] ir::error::Error),
     #[error(transparent)]
@@ -65,6 +69,7 @@ pub struct ConcreteContext<O: Order, R, const OPERAND_SIZE: usize> {
     hooks: Vec<
         Box<dyn ClonableHookConcrete<State = ConcreteState<O>, Error = pcode::Error, Outcome = R>>,
     >,
+    intrinsics: IntrinsicHandler<R, ConcreteState<O>>,
     state: ConcreteState<O>,
     marker: PhantomData<R>,
 }
@@ -137,13 +142,14 @@ impl ToSignedBytes for BitVec {
     }
 }
 
-impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OPERAND_SIZE }> {
+impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OPERAND_SIZE }> {
     pub fn new(translator: Translator, state: ConcreteState<O>) -> Self {
         Self {
             translator_context: translator.context_database(),
             translator_cache: Arc::new(RwLock::new(Map::default())),
             translator: Arc::new(translator),
             hooks: Vec::default(),
+            intrinsics: IntrinsicHandler::default(),
             state,
             marker: PhantomData,
         }
@@ -569,7 +575,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> ConcreteContext<O, R, { OP
     }
 }
 
-impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
+impl<O: Order, R: Clone + Default, const OPERAND_SIZE: usize> Interpreter
     for ConcreteContext<O, R, { OPERAND_SIZE }>
 {
     type State = PCodeState<u8, O>;
@@ -582,6 +588,7 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
             translator_context: self.translator.context_database(),
             translator_cache: self.translator_cache.clone(),
             hooks: self.hooks.clone(),
+            intrinsics: self.intrinsics.clone(),
             state: self.state.fork(),
             marker: self.marker,
         }
@@ -1409,11 +1416,18 @@ impl<O: Order, R: Default, const OPERAND_SIZE: usize> Interpreter
 
     fn intrinsic(
         &mut self,
-        _name: &str,
-        _operands: &[Operand],
-        _result: Option<&Operand>,
+        name: &str,
+        operands: &[Operand],
+        result: Option<&Operand>,
     ) -> Result<Outcome<R>, Error> {
-        Ok(Outcome::Halt(Default::default()))
+        let outcome = self.intrinsics.handle(name, &mut self.state, operands, result)
+            .map_err(Error::Intrinsic)?;
+
+        Ok(match outcome {
+            IntrinsicAction::Pass => Outcome::Branch(Branch::Next),
+            IntrinsicAction::Branch(address) => Outcome::Branch(Branch::Global(address)),
+            IntrinsicAction::Halt(reason) => Outcome::Halt(reason),
+        })
     }
 
     fn lift<A>(&mut self, address: A) -> Result<StepState, Error>
