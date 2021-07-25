@@ -1,12 +1,12 @@
 [package]
 name = "fuguex-concrete"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2018"
 license = "MIT"
 
 [dependencies]
 fnv = "1"
-fugue = { version = "0.1", registry = "fugue" }
+fugue = { version = "0.2", registry = "fugue" }
 fuguex-hooks = { path = "../fuguex-hooks", version = "0.1", registry = "fugue" }
 fuguex-intrinsics = { path = "../fuguex-intrinsics", version = "0.1", registry = "fugue" }
 fuguex-machine = { path = "../fuguex-machine", version = "0.1", registry = "fugue" }

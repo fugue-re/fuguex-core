@@ -1,12 +1,12 @@
 [package]
 name = "fuguex-state"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 license = "MIT"
 
 [dependencies]
-fugue = { version = "0.1", registry = "fugue" }
+fugue = { version = "0.2", registry = "fugue" }
 fuguex-state-derive = { path = "../fuguex-state-derive", version = "0.1", registry = "fugue" }
 interval-tree = { version = "0.1", registry = "fugue" }
 log = "0.4"

@@ -1,11 +1,11 @@
 [package]
 name = "fuguex-machine"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 license = "MIT"
 
 [dependencies]
-fugue = { version = "0.1", registry = "fugue" }
+fugue = { version = "0.2", registry = "fugue" }
 fuguex-state = { path = "../fuguex-state", version = "0.1", registry = "fugue" }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
