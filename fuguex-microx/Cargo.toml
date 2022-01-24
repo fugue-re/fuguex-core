@@ -1,0 +1,11 @@
+[package]
+name = "fuguex-microx"
+version = "0.1.3"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+fugue = { version = "0.2", registry = "fugue" }
+fuguex-hooks = { path = "../fuguex-hooks", version = "0.2", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }
+thiserror = "1"

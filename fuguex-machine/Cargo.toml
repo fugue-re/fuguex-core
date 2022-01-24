@@ -1,0 +1,11 @@
+[package]
+name = "fuguex-machine"
+version = "0.2.10"
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+fugue = { version = "0.2", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"

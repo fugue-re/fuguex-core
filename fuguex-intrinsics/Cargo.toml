@@ -1,0 +1,13 @@
+[package]
+name = "fuguex-intrinsics"
+version = "0.2.2"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+dyn-clone = "1"
+fugue = { version = "0.2", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }
+thiserror = "1"

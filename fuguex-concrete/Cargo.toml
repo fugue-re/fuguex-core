@@ -1,0 +1,21 @@
+[package]
+name = "fuguex-concrete"
+version = "0.2.19"
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+downcast-rs = "1"
+dyn-clone = "1"
+fnv = "1"
+fugue = { version = "0.2", registry = "fugue" }
+fuguex-hooks = { path = "../fuguex-hooks", version = "0.2", registry = "fugue" }
+fuguex-intrinsics = { path = "../fuguex-intrinsics", version = "0.2", registry = "fugue" }
+fuguex-loader = { path = "../fuguex-loader", version = "0.2", registry = "fugue" }
+fuguex-machine = { path = "../fuguex-machine", version = "0.2", registry = "fugue" }
+fuguex-microx = { path = "../fuguex-microx", version = "0.1", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }
+log = "0.4"
+parking_lot = "0.11"
+rand = { version = "0.8", features = ["small_rng"] }
+thiserror = "1"

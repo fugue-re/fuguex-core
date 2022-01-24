@@ -1,0 +1,20 @@
+[package]
+name = "fuguex-loader"
+version = "0.2.4"
+edition = "2018"
+
+[features]
+idapro = ["fugue-idapro"]
+ghidra = ["fugue-ghidra"]
+radare = ["fugue-radare"]
+all = ["idapro", "ghidra", "radare"]
+default = []
+
+[dependencies]
+either = "1"
+fugue = { version = "0.2", registry = "fugue" }
+fugue-ghidra = { version = "0.2", registry = "fugue", optional = true }
+fugue-idapro = { version = "0.2", registry = "fugue", optional = true }
+fugue-radare = { version = "0.2", registry = "fugue", optional = true }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }
+thiserror = "1"

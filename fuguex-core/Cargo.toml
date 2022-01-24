@@ -1,0 +1,22 @@
+[package]
+name = "fuguex"
+version = "0.2.4"
+edition = "2018"
+license = "MIT"
+
+[features]
+concrete = ["fuguex-concrete"]
+
+loader-all = ["fuguex-loader/all"]
+loader-ghidra = ["fuguex-loader/ghidra"]
+loader-idapro = ["fuguex-loader/idapro"]
+loader-radare = ["fuguex-loader/radare"]
+
+[dependencies]
+fuguex-concrete = { optional = true, path = "../fuguex-concrete", version = "0.2", registry = "fugue" }
+fuguex-hooks = { path = "../fuguex-hooks", version = "0.2", registry = "fugue" }
+fuguex-intrinsics = { path = "../fuguex-intrinsics", version = "0.2", registry = "fugue" }
+fuguex-loader = { path = "../fuguex-loader", version = "0.2", registry = "fugue" }
+fuguex-machine = { path = "../fuguex-machine", version = "0.2", registry = "fugue" }
+fuguex-microx = { path = "../fuguex-microx", version = "0.1", registry = "fugue" }
+fuguex-state = { path = "../fuguex-state", version = "0.2", registry = "fugue" }

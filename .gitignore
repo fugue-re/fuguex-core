@@ -1,0 +1,14 @@
+*.sublime-project
+*.sublime-workspace
+**/build/**
+**/_build/**
+**/*.egg-info/*
+**/*/__pycache__/*
+**/target/**
+*/**/target/**
+*/Cargo.lock
+**/*.class
+.idea
+.vscode
+**/.vscode
+Cargo.lock
