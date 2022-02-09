@@ -2,6 +2,11 @@
   <img alt="Fugue logo" src="https://raw.githubusercontent.com/fugue-re/fugue-core/master/data/fugue-logo-border-t.png" width="20%">
 </p>
 
+
+
+[![DOI](https://zenodo.org/badge/386729787.svg)](https://zenodo.org/badge/latestdoi/386729787)
+
+
 # Fugue Binary Analysis Framework
 
 Fugue is a binary analysis framework in the spirit of [B2R2] and [BAP], with
