@@ -1,6 +1,6 @@
 [package]
 name = "fuguex-state"
-version = "0.2.11"
+version = "0.2.12"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"

@@ -195,6 +195,14 @@ impl<O: Order> PCodeState<u8, O> {
         self.get_address(&self.registers.stack_pointer())
     }
 
+    pub fn get_pointer(&self, address: Address) -> Result<Address, Error> {
+        let opnd = Operand::Address {
+            value: address,
+            size: self.memory_space_ref().address_size(),
+        };
+        self.get_address(&opnd)
+    }
+
     // get value at address
     pub fn get_address(&self, operand: &Operand) -> Result<Address, Error> {
         let mut buf = [0u8; MAX_POINTER_SIZE];
