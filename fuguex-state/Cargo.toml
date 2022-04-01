@@ -1,6 +1,6 @@
 [package]
 name = "fuguex-state"
-version = "0.2.13"
+version = "0.2.14"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
@@ -12,3 +12,4 @@ intervals = { version = "0.1", registry = "fugue" }
 log = "0.4"
 paste = "1"
 thiserror = "1"
+ustr = "0.8"

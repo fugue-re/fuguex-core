@@ -8,6 +8,7 @@ use std::mem::take;
 use std::sync::Arc;
 
 use thiserror::Error;
+use ustr::Ustr;
 
 use crate::chunked::{self, ChunkState};
 use crate::flat::{self, FlatState};
@@ -84,9 +85,9 @@ impl Error {
 
 #[derive(Debug, Clone)]
 pub enum Segment<T: StateValue> {
-    Static { name: String, offset: usize },
-    Mapping { name: String, backing: ChunkState<T> },
-    StaticMapping { name: String, backing: FlatState<T> },
+    Static { name: Ustr, offset: usize },
+    Mapping { name: Ustr, backing: ChunkState<T> },
+    StaticMapping { name: Ustr, backing: FlatState<T> },
 }
 
 #[derive(Debug, Clone)]
@@ -104,21 +105,21 @@ pub enum MappingMut<'a, T: StateValue> {
 impl<T: StateValue> Segment<T> {
     pub fn new<S: AsRef<str>>(name: S, offset: usize) -> Self {
         Self::Static {
-            name: name.as_ref().to_string(),
+            name: Ustr::from(name.as_ref()),
             offset,
         }
     }
 
     pub fn mapping<S: AsRef<str>>(name: S, mapping: ChunkState<T>) -> Self {
         Self::Mapping {
-            name: name.as_ref().to_string(),
+            name: Ustr::from(name.as_ref()),
             backing: mapping,
         }
     }
 
     pub fn static_mapping<S: AsRef<str>>(name: S, mapping: FlatState<T>) -> Self {
         Self::StaticMapping {
-            name: name.as_ref().to_string(),
+            name: Ustr::from(name.as_ref()),
             backing: mapping,
         }
     }
@@ -336,6 +337,7 @@ impl<T: StateValue> PagedState<T> {
 }
 
 impl<T: StateValue> PagedState<T> {
+    #[inline(always)]
     pub fn with_flat<'a, A, F, O: 'a>(&'a self, address: A, access_size: usize, f: F) -> Result<O, Error>
     where A: Into<Address>,
           F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
@@ -368,6 +370,7 @@ impl<T: StateValue> PagedState<T> {
         }
     }
 
+    #[inline(always)]
     pub fn with_flat_mut<'a, A, F, O: 'a>(&'a mut self, address: A, access_size: usize, f: F) -> Result<O, Error>
     where A: Into<Address>,
           F: FnOnce(&'a mut FlatState<T>, Address, usize) -> Result<O, Error> {
@@ -400,6 +403,7 @@ impl<T: StateValue> PagedState<T> {
         }
     }
 
+    #[inline(always)]
     pub fn with_flat_from<'a, A, F, O: 'a>(&'a self, address: A, f: F) -> Result<O, Error>
     where A: Into<Address>,
           F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {

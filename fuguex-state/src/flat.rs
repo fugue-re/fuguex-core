@@ -99,7 +99,7 @@ impl<V: StateValue> State for FlatState<V> {
     }
 
     fn restore(&mut self, other: &Self) {
-        for block in &self.dirty.indices {
+        for block in self.dirty.indices.drain(..) {
             let start = usize::from(block.start_address());
             let end = usize::from(block.end_address());
 
@@ -108,7 +108,7 @@ impl<V: StateValue> State for FlatState<V> {
             self.dirty.bitsmap[block.index()] = 0;
             self.backing[start..real_end].clone_from_slice(&other.backing[start..real_end]);
         }
-        self.permissions = other.permissions.clone();
+        self.permissions.restore(&other.permissions);
     }
 }
 
@@ -461,6 +461,12 @@ impl Permissions {
             // each byte to readable by default
             bitsmap: vec![mask; 1 + size / PERM_SCALE],
             space,
+        }
+    }
+
+    pub fn restore(&mut self, other: &Permissions) {
+        for (t, s) in self.bitsmap.iter_mut().zip(other.bitsmap.iter()) {
+            *t = *s;
         }
     }
 
