@@ -1,4 +1,4 @@
-use fugue::ir::{Address, AddressSpace, IntoAddress};
+use fugue::ir::{Address, AddressSpace};
 use intervals::Interval;
 use intervals::collections::{Entry, IntervalTree};
 
@@ -260,8 +260,8 @@ impl<T: StateValue> PagedState<T> {
 
     pub fn static_mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
     where S: AsRef<str>,
-          A: IntoAddress {
-        let base_address = base_address.into_address(self.inner.address_space().as_ref());
+          A: Into<Address> {
+        let base_address = base_address.into();
         let range = base_address..=(base_address + size); // TODO: error for zero-size
 
         if self.segments.overlaps(range.clone()) {
@@ -277,8 +277,8 @@ impl<T: StateValue> PagedState<T> {
 
     pub fn mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
     where S: AsRef<str>,
-          A: IntoAddress {
-        let base_address = base_address.into_address(self.inner.address_space().as_ref());
+          A: Into<Address> {
+        let base_address = base_address.into();
         let range = base_address..=(base_address + size - 1usize); // TODO: error for zero-size
 
         if self.segments.overlaps(range.clone()) {
@@ -305,15 +305,15 @@ impl<T: StateValue> PagedState<T> {
     }
 
     pub fn mapping_for<A>(&self, address: A) -> Option<MappingRef<T>>
-    where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space().as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         self.segments.find(address)
             .and_then(|e| e.value().as_mapping())
     }
 
     pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<MappingMut<T>>
-    where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space().as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         self.segments.find_mut(address)
             .and_then(|e| e.into_value().as_mapping_mut())
     }
@@ -337,9 +337,9 @@ impl<T: StateValue> PagedState<T> {
 
 impl<T: StateValue> PagedState<T> {
     pub fn with_flat<'a, A, F, O: 'a>(&'a self, address: A, access_size: usize, f: F) -> Result<O, Error>
-    where A: IntoAddress,
+    where A: Into<Address>,
           F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         if let Some(principal) = self.segments.find(&address) {
             if address + access_size - 1usize > *principal.interval().end() { // FIXME: checked arith.
                 return Err(Error::OverlappedAccess {
@@ -352,15 +352,15 @@ impl<T: StateValue> PagedState<T> {
                 Segment::Mapping { ref backing, .. } => {
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
+                    f(backing.inner(), Address::from(translated as u64), access_size)
                 },
                 Segment::StaticMapping { ref backing, .. } => {
                     let translated = address - *principal.interval().start();
-                    f(backing, translated.into_address(self.inner.address_space().as_ref()), access_size)
+                    f(backing, translated, access_size)
                 },
                 Segment::Static { offset, .. } => {
                     let address = (address - *principal.interval().start()) + *offset;
-                    f(&self.inner, address.into_address(self.inner.address_space().as_ref()), access_size)
+                    f(&self.inner, address, access_size)
                 },
             }
         } else {
@@ -369,10 +369,9 @@ impl<T: StateValue> PagedState<T> {
     }
 
     pub fn with_flat_mut<'a, A, F, O: 'a>(&'a mut self, address: A, access_size: usize, f: F) -> Result<O, Error>
-    where A: IntoAddress,
+    where A: Into<Address>,
           F: FnOnce(&'a mut FlatState<T>, Address, usize) -> Result<O, Error> {
-        let space = self.inner.address_space();
-        let address = address.into_address(space.as_ref());
+        let address = address.into();
         if let Some(principal) = self.segments.find_mut(&address) {
             let interval = principal.interval();
             if address + access_size - 1usize > *interval.end() {
@@ -385,15 +384,15 @@ impl<T: StateValue> PagedState<T> {
                 Segment::Mapping { ref mut backing, .. } => {
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner_mut(), translated.into_address(space.as_ref()), access_size)
+                    f(backing.inner_mut(), Address::from(translated as u64), access_size)
                 },
                 Segment::StaticMapping { ref mut backing, .. } => {
                     let translated = address - *interval.start();
-                    f(backing, translated.into_address(space.as_ref()), access_size)
+                    f(backing, translated, access_size)
                 },
                 Segment::Static { offset, .. } => {
                     let address = (address - *interval.start()) + *offset;
-                    f(&mut self.inner, address.into_address(space.as_ref()), access_size)
+                    f(&mut self.inner, address, access_size)
                 }
             }
         } else {
@@ -402,9 +401,9 @@ impl<T: StateValue> PagedState<T> {
     }
 
     pub fn with_flat_from<'a, A, F, O: 'a>(&'a self, address: A, f: F) -> Result<O, Error>
-    where A: IntoAddress,
+    where A: Into<Address>,
           F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         if let Some(principal) = self.segments.find(&address) {
             if address > *principal.interval().end() {
                 return Err(Error::OverlappedAccess {
@@ -419,7 +418,7 @@ impl<T: StateValue> PagedState<T> {
                     let access_size = backing.len(); // FIXME: should this be -1 due to the red-zone?
                     let translated = backing.translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner(), translated.into_address(self.inner.address_space().as_ref()), access_size)
+                    f(backing.inner(), Address::from(translated as u64), access_size)
                 },
                 Segment::StaticMapping { ref backing, .. } => {
                     let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
@@ -427,7 +426,7 @@ impl<T: StateValue> PagedState<T> {
 
                     let access_size = max_access_size - usize::from(address);
 
-                    f(backing, address.into_address(self.inner.address_space_ref()), access_size)
+                    f(backing, address, access_size)
                 },
                 Segment::Static { offset, .. } => {
                     let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
@@ -436,7 +435,7 @@ impl<T: StateValue> PagedState<T> {
                     let address = offset_in + *offset;
                     let access_size = max_access_size - usize::from(offset_in);
 
-                    f(&self.inner, address.into_address(self.inner.address_space_ref()), access_size)
+                    f(&self.inner, address, access_size)
                 },
             }
         } else {
@@ -446,7 +445,7 @@ impl<T: StateValue> PagedState<T> {
 
     pub fn view_values_from<A>(&self, address: A) -> Result<&[T], Error>
     where
-        A: IntoAddress,
+        A: Into<Address>,
     {
         self.with_flat_from(address, |inner, address, n| {
             inner.view_values(address, n).map_err(|e| Error::backing(address, e))
@@ -454,8 +453,8 @@ impl<T: StateValue> PagedState<T> {
     }
 
     pub fn segment_bounds<A>(&self, address: A) -> Result<Entry<Address, Segment<T>>, Error>
-    where A: IntoAddress {
-        let address = address.into_address(self.inner.address_space().as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         self.segments
             .find(&address)
             .ok_or_else(|| Error::UnmappedAddress { address, size: 1usize })
@@ -492,11 +491,11 @@ impl<V: StateValue> StateOps for PagedState<V> {
 
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error>
     where
-        F: IntoAddress,
-        T: IntoAddress,
+        F: Into<Address>,
+        T: Into<Address>,
     {
-        let from = from.into_address(self.inner.address_space().as_ref());
-        let to = to.into_address(self.inner.address_space().as_ref());
+        let from = from.into();
+        let to = to.into();
 
         // TODO: can we avoid the intermediate allocation?
 
@@ -512,9 +511,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
 
     fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error>
     where
-        A: IntoAddress,
+        A: Into<Address>,
     {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         let n = values.len();
 
         self.with_flat(address, n, |inner, address, _size| {
@@ -524,9 +523,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
 
     fn view_values<A>(&self, address: A, n: usize) -> Result<&[Self::Value], Error>
     where
-        A: IntoAddress,
+        A: Into<Address>,
     {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         self.with_flat(address, n, |inner, address, n| {
             inner.view_values(address, n).map_err(|e| Error::backing(address, e))
         })
@@ -534,9 +533,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
 
     fn view_values_mut<A>(&mut self, address: A, n: usize) -> Result<&mut [Self::Value], Error>
     where
-        A: IntoAddress,
+        A: Into<Address>,
     {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         self.with_flat_mut(address, n, |inner, address, n| {
             inner.view_values_mut(address, n).map_err(|e| Error::backing(address, e))
         })
@@ -544,9 +543,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
 
     fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error>
     where
-        A: IntoAddress,
+        A: Into<Address>,
     {
-        let address = address.into_address(self.inner.address_space().as_ref());
+        let address = address.into();
         let n = values.len();
         self.with_flat_mut(address, n, |inner, address, _size| {
             inner.set_values(address, values).map_err(|e| Error::backing(address, e))

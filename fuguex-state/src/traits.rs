@@ -3,7 +3,7 @@ use fugue::bv::BitVec;
 use fugue::bytes::Order;
 use fugue::bytes::traits::ByteCast;
 
-use fugue::ir::address::IntoAddress;
+use fugue::ir::Address;
 
 use paste::paste;
 
@@ -96,20 +96,20 @@ pub trait StateOps: State {
     fn len(&self) -> usize;
 
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: IntoAddress,
-          T: IntoAddress;
+    where F: Into<Address>,
+          T: Into<Address>;
 
     fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress;
+    where A: Into<Address>;
 
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: IntoAddress;
+    where A: Into<Address>;
 
     fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: IntoAddress;
+    where A: Into<Address>;
 
     fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress;
+    where A: Into<Address>;
 }
 
 pub trait AsState<S>: State {

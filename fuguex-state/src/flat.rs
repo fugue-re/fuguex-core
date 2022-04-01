@@ -2,7 +2,6 @@ use std::fmt;
 use std::mem::size_of;
 use std::sync::Arc;
 
-use fugue::ir::IntoAddress;
 use fugue::ir::{Address, AddressValue, AddressSpace};
 
 use crate::traits::{State, StateOps, StateValue};
@@ -101,8 +100,8 @@ impl<V: StateValue> State for FlatState<V> {
 
     fn restore(&mut self, other: &Self) {
         for block in &self.dirty.indices {
-            let start = usize::from(block.start_address(self.space.as_ref()));
-            let end = usize::from(block.end_address(self.space.as_ref()));
+            let start = usize::from(block.start_address());
+            let end = usize::from(block.end_address());
 
             let real_end = self.backing.len().min(end);
 
@@ -121,10 +120,10 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Error>
-    where F: IntoAddress,
-          T: IntoAddress {
-        let from = from.into_address(self.space.as_ref());
-        let to = to.into_address(self.space.as_ref());
+    where F: Into<Address>,
+          T: Into<Address> {
+        let from = from.into();
+        let to = to.into();
 
         let soff = usize::from(from);
         let doff = usize::from(to);
@@ -195,8 +194,8 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 
     fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Error>
-    where A: IntoAddress {
-        let address = address.into_address(self.space.as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         let size = values.len();
         let start = usize::from(address);
         let end = start.checked_add(size);
@@ -224,8 +223,8 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Error>
-    where A: IntoAddress {
-        let address = address.into_address(self.space.as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         let start = usize::from(address);
         let end = start.checked_add(size);
 
@@ -250,8 +249,8 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 
     fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Error>
-    where A: IntoAddress {
-        let address = address.into_address(self.space.as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         let start = usize::from(address);
         let end = start.checked_add(size);
 
@@ -278,8 +277,8 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 
     fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Error>
-    where A: IntoAddress {
-        let address = address.into_address(self.space.as_ref());
+    where A: Into<Address> {
+        let address = address.into();
         let size = values.len();
         let start = usize::from(address);
         let end = start.checked_add(size);
@@ -344,13 +343,13 @@ impl Block {
     }
 
     #[inline]
-    fn start_address(&self, space: &AddressSpace) -> Address {
-        (self.0 * BLOCK_SIZE).into_address(space)
+    fn start_address(&self) -> Address {
+        (self.0 * BLOCK_SIZE).into()
     }
 
     #[inline]
-    fn end_address(&self, space: &AddressSpace) -> Address {
-        ((self.0 + 1) * BLOCK_SIZE).into_address(space)
+    fn end_address(&self) -> Address {
+        ((self.0 + 1) * BLOCK_SIZE).into()
     }
 }
 

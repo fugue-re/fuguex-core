@@ -5,7 +5,7 @@ use fugue::bytes::{ByteCast, Order};
 
 use fugue::ir::convention::Convention;
 use fugue::ir::il::pcode::Operand;
-use fugue::ir::{Address, AddressSpace, IntoAddress, Translator};
+use fugue::ir::{Address, AddressSpace, Translator};
 
 use thiserror::Error;
 
@@ -180,7 +180,7 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
 
     #[inline(always)]
     pub fn view_values_from<A>(&self, address: A) -> Result<&[T], Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.memory.view_values_from(address)
             .map_err(Error::Memory)
     }
@@ -236,20 +236,20 @@ impl<O: Order> PCodeState<u8, O> {
     }
 
     pub fn set_program_counter_value<A>(&mut self, value: A) -> Result<(), Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.set_address(&self.registers.program_counter(), value)
     }
 
     pub fn set_stack_pointer_value<A>(&mut self, value: A) -> Result<(), Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.set_address(&self.registers.stack_pointer(), value)
     }
 
     pub fn set_address<A>(&mut self, operand: &Operand, value: A) -> Result<(), Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
 
         let size = operand.size();
-        let address = value.into_address(self.memory_space_ref());
+        let address = value.into();
 
         if size == POINTER_64_SIZE {
             self.with_operand_values_mut(operand, |values| {
@@ -300,36 +300,36 @@ impl<V: StateValue, O: Order> StateOps for PCodeState<V, O> {
 
     #[inline(always)]
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: IntoAddress,
-          T: IntoAddress {
+    where F: Into<Address>,
+          T: Into<Address> {
         self.memory.copy_values(from, to, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.memory.get_values(address, values)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.memory.view_values(address, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.memory.view_values_mut(address, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.memory.set_values(address, values)
             .map_err(Error::Memory)
     }

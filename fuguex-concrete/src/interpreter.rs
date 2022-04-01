@@ -1538,7 +1538,7 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize> Interpre
 
             let view = self
                 .state
-                .view_values_from(&address)
+                .view_values_from(address)
                 .map_err(Error::State)?;
             let step_state = StepState::from(
                 self.translator

@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use fugue::ir::{IntoAddress, Translator};
+use fugue::ir::{Address, Translator};
 
 use crate::flat::FlatState;
 use crate::traits::{State, StateOps, StateValue};
@@ -83,32 +83,32 @@ impl<V: StateValue> StateOps for UniqueState<V> {
 
     #[inline(always)]
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: IntoAddress,
-          T: IntoAddress {
+    where F: Into<Address>,
+          T: Into<Address> {
         self.0.copy_values(from, to, size)
     }
 
     #[inline(always)]
     fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.0.get_values(address, bytes)
     }
 
     #[inline(always)]
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.0.view_values(address, size)
     }
 
     #[inline(always)]
     fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.0.view_values_mut(address, size)
     }
 
     #[inline(always)]
     fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.0.set_values(address, bytes)
     }
 }

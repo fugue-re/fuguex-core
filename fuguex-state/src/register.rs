@@ -6,7 +6,7 @@ use fugue::bytes::Order;
 use fugue::ir::convention::{Convention, ReturnAddress};
 use fugue::ir::il::pcode::{Operand, Register};
 use fugue::ir::register::RegisterNames;
-use fugue::ir::{IntoAddress, Translator};
+use fugue::ir::{Address, Translator};
 
 use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 use crate::flat::FlatState;
@@ -124,32 +124,32 @@ impl<V: StateValue, O: Order> StateOps for RegisterState<V, O> {
 
     #[inline(always)]
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: IntoAddress,
-          T: IntoAddress {
+    where F: Into<Address>,
+          T: Into<Address> {
         self.inner.copy_values(from, to, size)
     }
 
     #[inline(always)]
     fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.inner.get_values(address, bytes)
     }
 
     #[inline(always)]
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.inner.view_values(address, size)
     }
 
     #[inline(always)]
     fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.inner.view_values_mut(address, size)
     }
 
     #[inline(always)]
     fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
-    where A: IntoAddress {
+    where A: Into<Address> {
         self.inner.set_values(address, bytes)
     }
 }
