@@ -109,6 +109,7 @@ impl<V: StateValue> State for FlatState<V> {
             self.backing[start..real_end].clone_from_slice(&other.backing[start..real_end]);
         }
         self.permissions.restore(&other.permissions);
+        self.dirty.clone_from(&other.dirty);
     }
 }
 
