@@ -371,10 +371,13 @@ impl DirtyBacking {
 
     #[inline]
     pub fn fork(&self) -> Self {
+        /*
         Self {
             indices: Vec::with_capacity(self.indices.capacity()),
             bitsmap: vec![0 as u64; self.bitsmap.len()],
         }
+        */
+        self.clone()
     }
 
     #[inline]
