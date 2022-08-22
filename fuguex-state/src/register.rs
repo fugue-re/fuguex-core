@@ -10,10 +10,11 @@ use fugue::ir::{Address, Translator};
 
 use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 use crate::flat::FlatState;
+use serde::{Serialize, Deserialize};
 
 pub use crate::flat::Error;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ReturnLocation {
     Register(Operand),
     Relative(Operand, u64),
@@ -35,7 +36,8 @@ impl ReturnLocation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+// #[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 pub struct RegisterState<T: StateValue, O: Order> {
     program_counter: Arc<Operand>,
     stack_pointer: Arc<Operand>,
