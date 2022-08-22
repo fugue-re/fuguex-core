@@ -9,6 +9,8 @@ use std::sync::Arc;
 pub enum Bound<A: IntoAddress> {
     Address(A),
     Steps(usize),
+    AddressOrSteps(A, usize),
+    AddressReachCountOrSteps(A, usize, usize),
     Unbounded,
 }
 
@@ -16,11 +18,21 @@ impl<A> Bound<A> where A: IntoAddress {
     pub fn address(address: A) -> Bound<A> {
         Self::Address(address)
     }
+    pub fn address_or_steps(address: A, steps: usize) -> Bound<A> {
+        Self::AddressOrSteps(address, steps)
+    }
+    pub fn address_reach_count_or_steps(address: A, addr_reach_count: usize, steps: usize) -> Bound<A> {
+        Self::AddressReachCountOrSteps(address, addr_reach_count, steps)
+    }
 
     pub fn in_space(self, space: &AddressSpace) -> Bound<AddressValue> {
         match self {
             Self::Address(address) => Bound::Address(address.into_address_value(&*space)),
             Self::Steps(steps) => Bound::Steps(steps),
+            Self::AddressOrSteps(address, steps) => Bound::AddressOrSteps(address.into_address_value(&*space), steps),
+            Self::AddressReachCountOrSteps(address, address_reach_count, steps) => {
+                Bound::AddressReachCountOrSteps(address.into_address_value(&*space), address_reach_count, steps)
+            }
             Self::Unbounded => Bound::Unbounded,
         }
     }
@@ -37,18 +49,41 @@ impl Bound<AddressValue> {
 
     // Decrease step count
     // Used for counting down from the specified step count
-    pub fn deplete(self) -> Self {
-        if let Self::Steps(steps) = self {
-            Self::Steps(steps.checked_sub(1).unwrap_or(0))
-        } else {
-            self
+    pub fn deplete(self, address: &AddressValue) -> Self {
+        match self {
+            Self::Steps(steps) => Self::Steps(steps.checked_sub(1).unwrap_or(0)),
+            Self::AddressOrSteps(address, steps) => Self::AddressOrSteps(address, steps.checked_sub(1).unwrap_or(0)),
+            Self::AddressReachCountOrSteps(address_target, addr_reach_count, steps) => {
+                let addr_reach_count_new = if *address == address_target {
+                    addr_reach_count.checked_sub(1).unwrap_or(0)
+                } else {
+                    addr_reach_count
+                };
+                Self::AddressReachCountOrSteps(
+                    address_target, 
+                    addr_reach_count_new, 
+                    steps.checked_sub(1).unwrap_or(0)
+                )
+            }
+            _ => self,
         }
+        // if let Self::Steps(steps) = self {
+        //     Self::Steps(steps.checked_sub(1).unwrap_or(0))
+        // } else if let Self::AddressOrSteps(address, steps ) = self {
+        //     Self::AddressOrSteps(address, ()steps.checked_sub(1).unwrap_or(0))
+        // }{
+        //     self
+        // }
     }
 
     pub fn reached(&self, address: &AddressValue) -> bool {
         match self {
             Self::Address(ref target) => target == address,
             Self::Steps(steps) => *steps == 0,
+            Self::AddressOrSteps(ref target, steps) => target == address || *steps == 0,
+            Self::AddressReachCountOrSteps(ref _target, addr_reach_count, steps) => {
+                *addr_reach_count == 0 || *steps == 0
+            }
             Self::Unbounded => false,
         }
     }

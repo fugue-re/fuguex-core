@@ -314,7 +314,7 @@ impl<I> Machine<I> where I: Interpreter {
 
         // Check if still within bound
         while !bound.reached(&*location.address()) {
-            bound = bound.deplete();
+            bound = bound.deplete(&*location.address());
             // Execute the instruction at the current location
             match self.step(location)? {
                 StepOutcome::Branch(next_address) => {
