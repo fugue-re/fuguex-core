@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use fugue::ir::{AddressSpace, IntoAddress};
+use fugue::ir::{AddressSpace, IntoAddress, Address, AddressValue};
 use fugue::ir::il::Location;
 use fugue::ir::il::pcode::{Operand, PCodeOp};
 use fugue::ir::space::AddressSpaceId;
@@ -105,4 +105,5 @@ pub trait Interpreter {
     }
 
     fn interpreter_space(&self) -> Arc<AddressSpace>;
+    fn interpreter_address_val(&self, address: Address) -> AddressValue;
 }
