@@ -221,4 +221,12 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         value.into_values::<O>(self.view_values_mut(register.offset(), register.size())?);
         Ok(())
     }
+
+    pub fn set_register_by_name<N, V: IntoStateValues<T>>(&mut self, name: N, value: V) -> Result<(), Error>
+    where N: AsRef<str> {
+        let register = self.register_by_name(&name).unwrap_or_else(|| {
+            panic!("register {} not found", name.as_ref())
+        });
+        self.set_register(&register, value)
+    }
 }
