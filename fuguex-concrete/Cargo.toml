@@ -19,3 +19,4 @@ log = "0.4"
 parking_lot = "0.11"
 rand = { version = "0.8", features = ["small_rng"] }
 thiserror = "1"
+serde_any = "0.5"

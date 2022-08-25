@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
-use std::ops::Add;
+use std::ops::{Deref};
 use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
 use fugue::ir::space_manager::FromSpace;
-use fuguex_hooks::{HookOutcome, HookStepAction};
+use fuguex_hooks::{HookStepAction};
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use fugue::bytes::traits::ByteCast;
@@ -30,8 +30,8 @@ use fuguex_loader::LoaderMapping;
 
 use fuguex_machine::types::{Branch, OrOutcome, Outcome, StepState};
 use fuguex_machine::Interpreter;
-
 use fuguex_microx::ViolationSource;
+use serde_any;
 
 use fuguex_state::pcode::{self, PCodeState};
 use fuguex_state::pcode::{
@@ -221,6 +221,15 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
 
     pub fn lifted_cache(&self) -> RwLockReadGuard<Map<Address, StepState>> {
         self.translator_cache.read()
+    }
+    
+    pub fn lifted_cache_to_file(&self, path: &str) -> Result<(), serde_any::Error>{
+        serde_any::to_file(path, &self.translator_cache.read().deref())
+    }
+    pub fn lifted_cache_from_file(&self, path: &str) -> Result<(), serde_any::Error>{
+        let mut cache = self.translator_cache.write();
+        *cache = serde_any::from_file(path)?;
+        Ok(())
     }
 
     fn read_operand_with<U, F>(
@@ -1556,7 +1565,6 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize> Interpre
             step_state
         };
 
-        // TODO: handle outcomes
         // TODO: Implement hook action queue with priority
         let mut hook_outcome = HookStepAction::Pass;
         for hook in self.hooks.iter_mut() {
