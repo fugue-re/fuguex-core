@@ -3,8 +3,9 @@ use fugue::bv::BitVec;
 use fugue::bytes::Order;
 use fugue::bytes::traits::ByteCast;
 
-use fugue::ir::Address;
-
+use fugue::db::Endian;
+use fugue::ir::address::IntoAddress;
+use ux::u24;
 use paste::paste;
 
 pub use fuguex_state_derive::AsState;
@@ -56,7 +57,7 @@ macro_rules! impls_for {
     };
 }
 
-impls_for![bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize];
+impls_for![bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, u24];
 
 impl FromStateValues<u8> for BitVec {
     #[inline(always)]

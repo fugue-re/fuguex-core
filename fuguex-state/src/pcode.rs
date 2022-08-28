@@ -8,6 +8,7 @@ use fugue::ir::il::pcode::Operand;
 use fugue::ir::{Address, AddressSpace, Translator};
 
 use thiserror::Error;
+use ux::u24;
 
 use crate::paged::{self, PagedState};
 use crate::register::{self, RegisterState};
@@ -18,6 +19,7 @@ use crate::traits::{FromStateValues, IntoStateValues};
 
 pub const POINTER_8_SIZE: usize = 1;
 pub const POINTER_16_SIZE: usize = 2;
+pub const POINTER_20_SIZE: usize = 3;
 pub const POINTER_32_SIZE: usize = 4;
 pub const POINTER_64_SIZE: usize = 8;
 pub const MAX_POINTER_SIZE: usize = POINTER_64_SIZE;
@@ -228,6 +230,11 @@ impl<O: Order> PCodeState<u8, O> {
                 buf[..size].copy_from_slice(values);
                 u8::from_bytes::<O>(values) as u64
             })
+        } else if size == POINTER_20_SIZE {
+            self.with_operand_values(operand, |values| {
+                buf[..size].copy_from_slice(values);
+                u64::from(u24::from_bytes::<O>(values))
+            })
         } else {
             return Err(Error::UnsupportedAddressSize(size))
         }?;
@@ -266,6 +273,10 @@ impl<O: Order> PCodeState<u8, O> {
         } else if size == POINTER_8_SIZE {
             self.with_operand_values_mut(operand, |values| {
                 u8::from(address).into_bytes::<O>(values)
+            })
+        } else if size == POINTER_20_SIZE {
+            self.with_operand_values_mut(operand, |values| {
+                u24::new(u32::from(address)).into_bytes::<O>(values)
             })
         } else {
             return Err(Error::UnsupportedAddressSize(size))

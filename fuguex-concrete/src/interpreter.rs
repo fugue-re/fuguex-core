@@ -32,12 +32,13 @@ use fuguex_microx::ViolationSource;
 
 use fuguex_state::pcode::{self, PCodeState};
 use fuguex_state::pcode::{
-    MAX_POINTER_SIZE, POINTER_16_SIZE, POINTER_32_SIZE, POINTER_64_SIZE, POINTER_8_SIZE,
+    MAX_POINTER_SIZE, POINTER_16_SIZE, POINTER_32_SIZE, POINTER_64_SIZE, POINTER_8_SIZE, POINTER_20_SIZE
 };
 use fuguex_state::register::ReturnLocation;
 use fuguex_state::traits::State;
 
 use thiserror::Error;
+use ux::u24;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -582,6 +583,10 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
             self.read_operand_with(pointer, &mut buf[..psize], source, |buf| {
                 u8::from_bytes::<O>(buf) as u64
             })?
+        } else if psize == POINTER_20_SIZE {
+            self.read_operand_with(pointer, &mut buf[..psize], source, |buf| {
+                u64::from(ux::u24::from_bytes::<O>(buf))
+            })? 
         } else {
             return Err(Error::UnsupportedAddressSize(pointer.size()));
         };
@@ -612,6 +617,9 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
             self.write_operand(pointer, &buf[..psize])
         } else if psize == POINTER_8_SIZE {
             u8::from(address).into_bytes::<O>(&mut buf[..psize]);
+            self.write_operand(pointer, &buf[..psize])
+        } else if psize == POINTER_20_SIZE {
+            u24::new(u32::from(address)).into_bytes::<O>(&mut buf[..psize]);
             self.write_operand(pointer, &buf[..psize])
         } else {
             Err(Error::UnsupportedAddressSize(psize))
