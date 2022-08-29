@@ -24,7 +24,7 @@ use fugue::ir::{
 use crate::hooks::ClonableHookConcrete;
 use fuguex_hooks::types::{HookCBranchAction, HookCallAction};
 
-use fuguex_intrinsics::{IntrinsicAction, IntrinsicHandler};
+use fuguex_intrinsics::{IntrinsicAction, IntrinsicHandler, IntrinsicBehaviour};
 
 use fuguex_loader::LoaderMapping;
 
@@ -170,6 +170,11 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
             state,
             marker: PhantomData,
         }
+    }
+    
+    pub fn add_intrinsics <B: IntrinsicBehaviour<Outcome = R, State = ConcreteState<O>> + 'static>
+        (&mut self, intrinsic: B) -> Result<(), fuguex_intrinsics::Error<pcode::Error>>{
+        self.intrinsics.register(intrinsic, &self.state)
     }
 
     pub fn add_hook<S, H>(&mut self, name: S, hook: H)
