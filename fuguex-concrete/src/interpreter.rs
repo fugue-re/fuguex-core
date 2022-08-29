@@ -300,7 +300,9 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
         buf: &mut [u8],
         kind: ViolationSource,
     ) -> Result<(), Error> {
-        self.read_operand_with(operand, buf, kind, |_| ())
+        self.read_operand_with(operand, buf, kind, |_| ())?;
+        log::trace!("values: {}: {:?}", operand, buf);
+        Ok(())        
     }
 
     fn write_operand(&mut self, operand: &Operand, buf: &[u8]) -> Result<(), Error> {
