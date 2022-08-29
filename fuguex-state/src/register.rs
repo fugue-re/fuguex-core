@@ -229,4 +229,12 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         });
         self.set_register(&register, value)
     }
+
+    pub fn get_register_by_name<N, V: FromStateValues<T>>(&self, name: N) -> Result<V, Error>
+    where N: AsRef<str> {
+        let register = self.register_by_name(&name).unwrap_or_else(|| {
+            panic!("register {} not found", name.as_ref())
+        });
+        self.get_register(&register)
+    }
 }
