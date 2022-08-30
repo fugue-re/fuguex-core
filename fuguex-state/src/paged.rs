@@ -14,7 +14,7 @@ use crate::chunked::{self, ChunkState};
 use crate::flat::{self, FlatState};
 use crate::traits::{State, StateOps, StateValue};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     #[error("unmapped virtual address at {address}")]
     UnmappedAddress { address: Address, size: usize },

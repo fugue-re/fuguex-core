@@ -22,7 +22,7 @@ pub const POINTER_32_SIZE: usize = 4;
 pub const POINTER_64_SIZE: usize = 8;
 pub const MAX_POINTER_SIZE: usize = POINTER_64_SIZE;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     #[error(transparent)]
     Memory(paged::Error),
@@ -195,6 +195,7 @@ impl<O: Order> PCodeState<u8, O> {
         self.get_address(&self.registers.stack_pointer())
     }
 
+    // get the value of a pointer itself at address
     pub fn get_pointer(&self, address: Address) -> Result<Address, Error> {
         let opnd = Operand::Address {
             value: address,

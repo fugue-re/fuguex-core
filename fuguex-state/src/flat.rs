@@ -9,7 +9,7 @@ use crate::traits::{State, StateOps, StateValue};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     #[error("{access} access violation at {address} of {size} bytes in space `{}`", address.space().index())]
     AccessViolation { address: AddressValue, size: usize, access: Access },
