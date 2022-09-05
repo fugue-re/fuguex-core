@@ -112,14 +112,14 @@ pub trait StateOps: State {
     where A: Into<Address>;
 
     fn write<A, O: Order, V: IntoStateValues<Self::Value>>(&mut self, address: A, value: V) -> Result<(), Self::Error>
-    where A: IntoAddress{
+    where A: Into<Address>{
         let value_size = std::mem::size_of_val(&value);
         value.into_values::<O>(&mut self.view_values_mut(address, value_size)?);
         Ok(())
     }
 
     fn read<A, O: Order, V: FromStateValues<Self::Value>>(&self, address: A, size: usize) -> Result<V, Self::Error>
-    where A: IntoAddress{
+    where A: Into<Address>{
         let values = self.view_values(address, size)?;
         Ok(V::from_values::<O>(values))
     }
