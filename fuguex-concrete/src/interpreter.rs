@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
+use std::ops::{Deref};
 use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
+use fugue::ir::space_manager::FromSpace;
+use fuguex_hooks::{HookStepAction};
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use fugue::bytes::traits::ByteCast;
@@ -21,14 +24,14 @@ use fugue::ir::{
 use crate::hooks::ClonableHookConcrete;
 use fuguex_hooks::types::{HookCBranchAction, HookCallAction};
 
-use fuguex_intrinsics::{IntrinsicAction, IntrinsicHandler};
+use fuguex_intrinsics::{IntrinsicAction, IntrinsicHandler, IntrinsicBehaviour};
 
 use fuguex_loader::LoaderMapping;
 
 use fuguex_machine::types::{Branch, OrOutcome, Outcome, StepState};
 use fuguex_machine::Interpreter;
-
 use fuguex_microx::ViolationSource;
+use serde_any;
 
 use fuguex_state::pcode::{self, PCodeState};
 use fuguex_state::pcode::{
@@ -168,6 +171,11 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
             marker: PhantomData,
         }
     }
+    
+    pub fn add_intrinsics <B: IntrinsicBehaviour<Outcome = R, State = ConcreteState<O>> + 'static>
+        (&mut self, intrinsic: B) -> Result<(), fuguex_intrinsics::Error<pcode::Error>>{
+        self.intrinsics.register(intrinsic, &self.state)
+    }
 
     pub fn add_hook<S, H>(&mut self, name: S, hook: H)
     where
@@ -218,6 +226,15 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
 
     pub fn lifted_cache(&self) -> RwLockReadGuard<Map<Address, StepState>> {
         self.translator_cache.read()
+    }
+    
+    pub fn lifted_cache_to_file(&self, path: &str) -> Result<(), serde_any::Error>{
+        serde_any::to_file(path, &self.translator_cache.read().deref())
+    }
+    pub fn lifted_cache_from_file(&self, path: &str) -> Result<(), serde_any::Error>{
+        let mut cache = self.translator_cache.write();
+        *cache = serde_any::from_file(path)?;
+        Ok(())
     }
 
     fn read_operand_with<U, F>(
@@ -283,7 +300,9 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize>
         buf: &mut [u8],
         kind: ViolationSource,
     ) -> Result<(), Error> {
-        self.read_operand_with(operand, buf, kind, |_| ())
+        self.read_operand_with(operand, buf, kind, |_| ())?;
+        log::trace!("values: {}: {:?}", operand, buf);
+        Ok(())        
     }
 
     fn write_operand(&mut self, operand: &Operand, buf: &[u8]) -> Result<(), Error> {
@@ -1553,18 +1572,57 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize> Interpre
             step_state
         };
 
-        // TODO: handle outcomes
+        // TODO: Implement hook action queue with priority
+        let mut hook_outcome = HookStepAction::Pass;
         for hook in self.hooks.iter_mut() {
-            hook.hook_architectural_step(&mut self.state, &address, &step_state)
+            let temp = hook.hook_architectural_step(&mut self.state, &address, &step_state)
                 .map_err(Error::Hook)?;
+            match temp.action {
+                HookStepAction::Branch((priority, address)) => {
+                    // If we have a Branch action
+                    if let HookStepAction::Branch((p, a)) =  hook_outcome{
+                        // Update hook_outcom if priority is higher
+                        if priority > p {
+                            hook_outcome = temp.action;
+                        }
+                    } else {
+                        // If we don't have a branch action, then update it with branch
+                        // Branch overrides the rest
+                        hook_outcome = temp.action;
+                    }
+                },
+                HookStepAction::Pass => (),
+                HookStepAction::Halt(reason) => {}
+                HookStepAction::Skip => {},
+            }
         }
 
-        let program_counter = self.state.registers().program_counter().clone();
-        self.state
-            .set_address(&program_counter, address)
-            .map_err(Error::State)?;
+        match hook_outcome {
+            HookStepAction::Branch((priority, address)) => {
+                // Branch into address
+                let branch_target_addr_val = AddressValue::from_space(address, self.translator.manager());
+                Ok(OrOutcome::Branch(branch_target_addr_val.into()))
+            }
+            HookStepAction::Pass => {
+                // Continue normal step
+                let program_counter = self.state.registers().program_counter().clone();
+                self.state
+                    .set_address(&program_counter, address)
+                    .map_err(Error::State)?;            
+                Ok(step_state.into())            
+        }
+            HookStepAction::Halt(reason) => {
+                Ok(OrOutcome::Halt(reason))
+            }
+            HookStepAction::Skip => {
+                // Skip means branch to the next Instruction and relift
+                Ok(OrOutcome::Branch(
+                    AddressValue::from_space(address + 1usize, self.translator.manager())
+                    .into()))
+            }
+        }
 
-        Ok(step_state.into())
+
     }
 
     fn operation(&mut self, location: &Location, step: &PCodeOp) -> Result<OrOutcome<(), Self::Outcome>, Self::Error> {

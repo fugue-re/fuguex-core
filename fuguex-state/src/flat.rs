@@ -7,8 +7,9 @@ use fugue::ir::{Address, AddressValue, AddressSpace};
 use crate::traits::{State, StateOps, StateValue};
 
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     #[error("{access} access violation at {address} of {size} bytes in space `{}`", address.space().index())]
     AccessViolation { address: AddressValue, size: usize, access: Access },
@@ -18,7 +19,7 @@ pub enum Error {
     OOBWrite { address: Address, size: usize },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct FlatState<T: StateValue> {
     backing: Vec<T>,
     dirty: DirtyBacking,
@@ -308,7 +309,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Block(u64);
 
@@ -354,7 +355,7 @@ impl Block {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct DirtyBacking {
     indices: Vec<Block>,
     bitsmap: Vec<u64>,
@@ -437,7 +438,7 @@ impl Access {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Permissions {
     bitsmap: Vec<u64>,
     space: Arc<AddressSpace>,

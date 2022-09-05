@@ -10,10 +10,11 @@ use fugue::ir::{Address, Translator};
 
 use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 use crate::flat::FlatState;
+use serde::{Serialize, Deserialize};
 
 pub use crate::flat::Error;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ReturnLocation {
     Register(Operand),
     Relative(Operand, u64),
@@ -35,7 +36,8 @@ impl ReturnLocation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+// #[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 pub struct RegisterState<T: StateValue, O: Order> {
     program_counter: Arc<Operand>,
     stack_pointer: Arc<Operand>,
@@ -218,5 +220,21 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
     pub fn set_register<V: IntoStateValues<T>>(&mut self, register: &Register, value: V) -> Result<(), Error> {
         value.into_values::<O>(self.view_values_mut(register.offset(), register.size())?);
         Ok(())
+    }
+
+    pub fn set_register_by_name<N, V: IntoStateValues<T>>(&mut self, name: N, value: V) -> Result<(), Error>
+    where N: AsRef<str> {
+        let register = self.register_by_name(&name).unwrap_or_else(|| {
+            panic!("register {} not found", name.as_ref())
+        });
+        self.set_register(&register, value)
+    }
+
+    pub fn get_register_by_name<N, V: FromStateValues<T>>(&self, name: N) -> Result<V, Error>
+    where N: AsRef<str> {
+        let register = self.register_by_name(&name).unwrap_or_else(|| {
+            panic!("register {} not found", name.as_ref())
+        });
+        self.get_register(&register)
     }
 }

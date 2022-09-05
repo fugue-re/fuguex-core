@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::flat::{self, Access, FlatState};
 use crate::traits::{State, StateOps, StateValue};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     #[error(transparent)]
     Backing(flat::Error),
