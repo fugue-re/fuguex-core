@@ -1,12 +1,10 @@
 use fugue::ir::{Address, AddressSpace};
-use intervals::Interval;
-use intervals::collections::{Entry, IntervalTree};
 
-use std::iter::FromIterator;
-use std::ops::Range;
 use std::mem::take;
+use std::ops::Range;
 use std::sync::Arc;
 
+use iset::IntervalMap;
 use thiserror::Error;
 use ustr::Ustr;
 
@@ -31,36 +29,29 @@ pub enum Error {
 impl Error {
     pub fn access(&self) -> (Address, usize) {
         match self {
-            Self::UnmappedAddress { address, size } |
-            Self::OverlappedAccess { address, size } |
-            Self::OverlappedMapping { address, size } => {
-                (*address, *size)
-            },
+            Self::UnmappedAddress { address, size }
+            | Self::OverlappedAccess { address, size }
+            | Self::OverlappedMapping { address, size } => (*address, *size),
             Self::Backing(
-                flat::Error::OOBRead { address, size } |
-                flat::Error::OOBWrite { address, size }) => {
-                (*address, *size)
-            },
+                flat::Error::OOBRead { address, size } | flat::Error::OOBWrite { address, size },
+            ) => (*address, *size),
             Self::Backing(flat::Error::AccessViolation { address, size, .. }) => {
                 (address.into(), *size)
             }
             Self::Chunked(
                 chunked::Error::Backing(
-                    flat::Error::OOBRead { address, size } |
-                    flat::Error::OOBWrite { address, size }
-                ) |
-                chunked::Error::AccessUnmanaged { address, size } |
-                chunked::Error::HeapOverflow { address, size }
-            )
-            => {
-                (*address, *size)
-            },
-            Self::Chunked(
-                chunked::Error::Backing(flat::Error::AccessViolation { address, size, .. })
-            ) => {
-                (address.into(), *size)
-            }
-            _ => panic!("error is not an access violation")
+                    flat::Error::OOBRead { address, size }
+                    | flat::Error::OOBWrite { address, size },
+                )
+                | chunked::Error::AccessUnmanaged { address, size }
+                | chunked::Error::HeapOverflow { address, size },
+            ) => (*address, *size),
+            Self::Chunked(chunked::Error::Backing(flat::Error::AccessViolation {
+                address,
+                size,
+                ..
+            })) => (address.into(), *size),
+            _ => panic!("error is not an access violation"),
         }
     }
 
@@ -74,7 +65,11 @@ impl Error {
                 address: address + base,
                 size,
             },
-            flat::Error::AccessViolation { address, access, size } => flat::Error::AccessViolation {
+            flat::Error::AccessViolation {
+                address,
+                access,
+                size,
+            } => flat::Error::AccessViolation {
                 address: address + base,
                 access,
                 size,
@@ -142,8 +137,12 @@ impl<T: StateValue> Segment<T> {
 
     pub fn as_mapping_mut(&mut self) -> Option<MappingMut<T>> {
         match self {
-            Self::Mapping { ref mut backing, .. } => Some(MappingMut::Dynamic(backing)),
-            Self::StaticMapping { ref mut backing, .. } => Some(MappingMut::Static(backing)),
+            Self::Mapping {
+                ref mut backing, ..
+            } => Some(MappingMut::Dynamic(backing)),
+            Self::StaticMapping {
+                ref mut backing, ..
+            } => Some(MappingMut::Static(backing)),
             _ => None,
         }
     }
@@ -172,7 +171,13 @@ impl<T: StateValue> Segment<T> {
 
     pub fn restore(&mut self, other: &Self) {
         match (self, other) {
-            (Self::Static { name, offset }, Self::Static { name: rname, offset: roffset }) => {
+            (
+                Self::Static { name, offset },
+                Self::Static {
+                    name: rname,
+                    offset: roffset,
+                },
+            ) => {
                 if name != rname || offset != roffset {
                     panic!("attempting to restore segment `{}` at {} from incompatible segment `{}` at {}",
                            name,
@@ -181,11 +186,18 @@ impl<T: StateValue> Segment<T> {
                            roffset
                     );
                 }
-            },
-            (Self::Mapping { name, backing }, Self::Mapping { name: rname, backing: rbacking }) => {
-                if name != rname ||
-                    backing.base_address() != rbacking.base_address() ||
-                    backing.len() != rbacking.len() {
+            }
+            (
+                Self::Mapping { name, backing },
+                Self::Mapping {
+                    name: rname,
+                    backing: rbacking,
+                },
+            ) => {
+                if name != rname
+                    || backing.base_address() != rbacking.base_address()
+                    || backing.len() != rbacking.len()
+                {
                     panic!("attempting to restore segment `{}` at {} of size {} from incompatible segment `{}` at {} of size {}",
                            name,
                            backing.base_address(),
@@ -197,8 +209,14 @@ impl<T: StateValue> Segment<T> {
                 }
 
                 backing.restore(rbacking);
-            },
-            (Self::StaticMapping { name, backing }, Self::StaticMapping { name: rname, backing: rbacking }) => {
+            }
+            (
+                Self::StaticMapping { name, backing },
+                Self::StaticMapping {
+                    name: rname,
+                    backing: rbacking,
+                },
+            ) => {
                 if name != rname || backing.len() != rbacking.len() {
                     panic!("attempting to restore segment `{}` of size {} from incompatible segment `{}` of size {}",
                            name,
@@ -209,10 +227,11 @@ impl<T: StateValue> Segment<T> {
                 }
 
                 backing.restore(rbacking);
-            },
-            (slf, oth) => panic!("attempting to restore segment `{}` from segment `{}` which have different kinds",
-                                 slf.name(),
-                                 oth.name()
+            }
+            (slf, oth) => panic!(
+                "attempting to restore segment `{}` from segment `{}` which have different kinds",
+                slf.name(),
+                oth.name()
             ),
         }
     }
@@ -220,7 +239,7 @@ impl<T: StateValue> Segment<T> {
 
 #[derive(Debug, Clone)]
 pub struct PagedState<T: StateValue> {
-    segments: IntervalTree<Address, Segment<T>>,
+    segments: IntervalMap<Address, Segment<T>>,
     inner: FlatState<T>,
 }
 
@@ -242,7 +261,7 @@ impl<T: StateValue> PagedState<T> {
     pub fn new(
         mapping: impl IntoIterator<Item = (Range<Address>, Segment<T>)>,
         space: Arc<AddressSpace>,
-        size: usize
+        size: usize,
     ) -> Self {
         Self::from_parts(mapping, FlatState::new(space, size))
     }
@@ -252,71 +271,103 @@ impl<T: StateValue> PagedState<T> {
         backing: FlatState<T>,
     ) -> Self {
         Self {
-            segments: IntervalTree::from_iter(mapping.into_iter().map(|(r, s)| {
-                (Interval::from(r.start..=(r.end - 1usize)), s)
-            })),
+            segments: IntervalMap::from_iter(mapping.into_iter().map(|(r, s)| (r.start..r.end, s))),
             inner: backing,
         }
     }
 
-    pub fn static_mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
-    where S: AsRef<str>,
-          A: Into<Address> {
+    pub fn static_mapping<S, A>(
+        &mut self,
+        name: S,
+        base_address: A,
+        size: usize,
+    ) -> Result<(), Error>
+    where
+        S: AsRef<str>,
+        A: Into<Address>,
+    {
         let base_address = base_address.into();
-        let range = base_address..=(base_address + size - 1usize); // TODO: error for zero-size
+        let range = base_address..base_address + size; // TODO: error for zero-size
 
-        if self.segments.overlaps(range.clone()) {
+        if self.segments.has_overlap(range.clone()) {
             return Err(Error::OverlappedMapping {
                 address: base_address,
                 size,
-            })
+            });
         }
 
-        self.segments.insert(range, Segment::static_mapping(name, FlatState::new(self.inner.address_space(), size)));
+        self.segments.insert(
+            range,
+            Segment::static_mapping(name, FlatState::new(self.inner.address_space(), size)),
+        );
         Ok(())
     }
 
     pub fn mapping<S, A>(&mut self, name: S, base_address: A, size: usize) -> Result<(), Error>
-    where S: AsRef<str>,
-          A: Into<Address> {
+    where
+        S: AsRef<str>,
+        A: Into<Address>,
+    {
         let base_address = base_address.into();
-        let range = base_address..=(base_address + size - 1usize); // TODO: error for zero-size
+        let range = base_address..base_address + size; // TODO: error for zero-size
 
-        if self.segments.overlaps(range.clone()) {
+        if self.segments.has_overlap(range.clone()) {
             return Err(Error::OverlappedMapping {
                 address: base_address,
                 size,
-            })
+            });
         }
 
-        self.segments.insert(range, Segment::mapping(name, ChunkState::new(self.inner.address_space(), base_address, size)));
+        self.segments.insert(
+            range,
+            Segment::mapping(
+                name,
+                ChunkState::new(self.inner.address_space(), base_address, size),
+            ),
+        );
         Ok(())
     }
 
-    pub fn segments(&self) -> &IntervalTree<Address, Segment<T>> {
+    pub fn segments(&self) -> &IntervalMap<Address, Segment<T>> {
         &self.segments
     }
 
-    pub fn mappings(&self) -> impl Iterator<Item=&ChunkState<T>> {
-        self.segments.values().filter_map(|v| if let Segment::Mapping { backing, .. } = v {
-            Some(backing)
-        } else {
-            None
+    pub fn mappings(&self) -> impl Iterator<Item = &ChunkState<T>> {
+        self.segments.values(..).filter_map(|v| {
+            if let Segment::Mapping { backing, .. } = v {
+                Some(backing)
+            } else {
+                None
+            }
         })
     }
 
     pub fn mapping_for<A>(&self, address: A) -> Option<MappingRef<T>>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         let address = address.into();
-        self.segments.find(address)
-            .and_then(|e| e.value().as_mapping())
+        if address + 1usize < address {
+            return None;
+        }
+        self.segments
+            .values_overlap(address)
+            .next()
+            .and_then(|e| e.as_mapping())
     }
 
     pub fn mapping_for_mut<A>(&mut self, address: A) -> Option<MappingMut<T>>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         let address = address.into();
-        self.segments.find_mut(address)
-            .and_then(|e| e.into_value().as_mapping_mut())
+        if address + 1usize < address {
+            return None;
+        }
+        self.segments
+            .values_overlap_mut(address)
+            .next()
+            .and_then(|e| e.as_mapping_mut())
     }
 
     pub fn inner(&self) -> &FlatState<T> {
@@ -338,109 +389,163 @@ impl<T: StateValue> PagedState<T> {
 
 impl<T: StateValue> PagedState<T> {
     #[inline(always)]
-    pub fn with_flat<'a, A, F, O: 'a>(&'a self, address: A, access_size: usize, f: F) -> Result<O, Error>
-    where A: Into<Address>,
-          F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
+    pub fn with_flat<'a, A, F, O: 'a>(
+        &'a self,
+        address: A,
+        access_size: usize,
+        f: F,
+    ) -> Result<O, Error>
+    where
+        A: Into<Address>,
+        F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error>,
+    {
         let address = address.into();
-        if let Some(principal) = self.segments.find(&address) {
-            if address + access_size - 1usize > *principal.interval().end() { // FIXME: checked arith.
+        if address + 1usize < address {
+            return Err(Error::UnmappedAddress {
+                address,
+                size: access_size,
+            });
+        }
+        if let Some((interval, value)) = self.segments.overlap(address).next() {
+            if address + access_size > interval.end {
+                // FIXME: checked arith.
                 return Err(Error::OverlappedAccess {
                     address,
                     size: access_size,
                 });
             }
 
-            match principal.value() {
+            match value {
                 Segment::Mapping { ref backing, .. } => {
-                    let translated = backing.translate_checked(address, access_size)
+                    let translated = backing
+                        .translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner(), Address::from(translated as u64), access_size)
-                },
+                    f(
+                        backing.inner(),
+                        Address::from(translated as u64),
+                        access_size,
+                    )
+                }
                 Segment::StaticMapping { ref backing, .. } => {
-                    let translated = address - *principal.interval().start();
+                    let translated = address - interval.start;
                     f(backing, translated, access_size)
-                },
+                }
                 Segment::Static { offset, .. } => {
-                    let address = (address - *principal.interval().start()) + *offset;
+                    let address = (address - interval.start) + *offset;
                     f(&self.inner, address, access_size)
-                },
+                }
             }
         } else {
-            Err(Error::UnmappedAddress { address, size: access_size })
+            Err(Error::UnmappedAddress {
+                address,
+                size: access_size,
+            })
         }
     }
 
     #[inline(always)]
-    pub fn with_flat_mut<'a, A, F, O: 'a>(&'a mut self, address: A, access_size: usize, f: F) -> Result<O, Error>
-    where A: Into<Address>,
-          F: FnOnce(&'a mut FlatState<T>, Address, usize) -> Result<O, Error> {
+    pub fn with_flat_mut<'a, A, F, O: 'a>(
+        &'a mut self,
+        address: A,
+        access_size: usize,
+        f: F,
+    ) -> Result<O, Error>
+    where
+        A: Into<Address>,
+        F: FnOnce(&'a mut FlatState<T>, Address, usize) -> Result<O, Error>,
+    {
         let address = address.into();
-        if let Some(principal) = self.segments.find_mut(&address) {
-            let interval = principal.interval();
-            if address + access_size - 1usize > *interval.end() {
+        if address + 1usize < address {
+            return Err(Error::UnmappedAddress {
+                address,
+                size: access_size,
+            });
+        }
+        if let Some((interval, value)) = self.segments.overlap_mut(address).next() {
+            if address + access_size > interval.end {
                 return Err(Error::OverlappedAccess {
                     address,
                     size: access_size,
                 });
             }
-            match principal.into_value() {
-                Segment::Mapping { ref mut backing, .. } => {
-                    let translated = backing.translate_checked(address, access_size)
+            match value {
+                Segment::Mapping {
+                    ref mut backing, ..
+                } => {
+                    let translated = backing
+                        .translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner_mut(), Address::from(translated as u64), access_size)
-                },
-                Segment::StaticMapping { ref mut backing, .. } => {
-                    let translated = address - *interval.start();
+                    f(
+                        backing.inner_mut(),
+                        Address::from(translated as u64),
+                        access_size,
+                    )
+                }
+                Segment::StaticMapping {
+                    ref mut backing, ..
+                } => {
+                    let translated = address - interval.start;
                     f(backing, translated, access_size)
-                },
+                }
                 Segment::Static { offset, .. } => {
-                    let address = (address - *interval.start()) + *offset;
+                    let address = (address - interval.start) + *offset;
                     f(&mut self.inner, address, access_size)
                 }
             }
         } else {
-            Err(Error::UnmappedAddress { address, size: access_size })
+            Err(Error::UnmappedAddress {
+                address,
+                size: access_size,
+            })
         }
     }
 
     #[inline(always)]
     pub fn with_flat_from<'a, A, F, O: 'a>(&'a self, address: A, f: F) -> Result<O, Error>
-    where A: Into<Address>,
-          F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error> {
+    where
+        A: Into<Address>,
+        F: FnOnce(&'a FlatState<T>, Address, usize) -> Result<O, Error>,
+    {
         let address = address.into();
-        if let Some(principal) = self.segments.find(&address) {
-            if address > *principal.interval().end() {
-                return Err(Error::OverlappedAccess {
-                    address,
-                    size: 1,
-                });
-            }
-
-            match principal.value() {
+        if address + 1usize < address {
+            return Err(Error::UnmappedAddress {
+                address,
+                size: 1,
+            });
+        }
+        if let Some((interval, value)) = self.segments.overlap(address).next() {
+            match value {
                 Segment::Mapping { ref backing, .. } => {
                     // TODO: Chunked::available_len (view whole allocation)
                     let access_size = backing.len(); // FIXME: should this be -1 due to the red-zone?
-                    let translated = backing.translate_checked(address, access_size)
+                    let translated = backing
+                        .translate_checked(address, access_size)
                         .map_err(Error::Chunked)?;
-                    f(backing.inner(), Address::from(translated as u64), access_size)
-                },
+                    f(
+                        backing.inner(),
+                        Address::from(translated as u64),
+                        access_size,
+                    )
+                }
                 Segment::StaticMapping { ref backing, .. } => {
-                    let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
-                    let address = address - *principal.interval().start();
+                    let max_access_size =
+                        usize::from(interval.end - interval.start);
+                    let address = address - interval.start;
 
                     let access_size = max_access_size - usize::from(address);
 
                     f(backing, address, access_size)
-                },
+                }
                 Segment::Static { offset, .. } => {
-                    let max_access_size = usize::from(*principal.interval().end() - principal.interval().start()) + 1;
-                    let offset_in = address - *principal.interval().start();
+                    let max_access_size =
+                        usize::from(interval.end - interval.start);
+                    let offset_in = address - interval.start;
 
                     let address = offset_in + *offset;
                     let access_size = max_access_size - usize::from(offset_in);
 
                     f(&self.inner, address, access_size)
-                },
+                }
             }
         } else {
             Err(Error::UnmappedAddress { address, size: 1 })
@@ -452,16 +557,30 @@ impl<T: StateValue> PagedState<T> {
         A: Into<Address>,
     {
         self.with_flat_from(address, |inner, address, n| {
-            inner.view_values(address, n).map_err(|e| Error::backing(address, e))
+            inner
+                .view_values(address, n)
+                .map_err(|e| Error::backing(address, e))
         })
     }
 
-    pub fn segment_bounds<A>(&self, address: A) -> Result<Entry<Address, Segment<T>>, Error>
-    where A: Into<Address> {
+    pub fn segment_bounds<A>(&self, address: A) -> Result<(Range<Address>, &Segment<T>), Error>
+    where
+        A: Into<Address>,
+    {
         let address = address.into();
+        if address + 1usize < address {
+            return Err(Error::UnmappedAddress {
+                address,
+                size: 1usize,
+            });
+        }
         self.segments
-            .find(&address)
-            .ok_or_else(|| Error::UnmappedAddress { address, size: 1usize })
+            .overlap(address)
+            .next()
+            .ok_or_else(|| Error::UnmappedAddress {
+                address,
+                size: 1usize,
+            })
     }
 }
 
@@ -470,7 +589,7 @@ impl<V: StateValue> State for PagedState<V> {
 
     fn fork(&self) -> Self {
         Self {
-            segments: self.segments.iter().map(|(i, v)| (i, v.fork())).collect(),
+            segments: self.segments.iter(..).map(|(i, v)| (i, v.fork())).collect(),
             inner: self.inner.fork(),
         }
     }
@@ -479,12 +598,15 @@ impl<V: StateValue> State for PagedState<V> {
         self.inner.restore(&other.inner);
 
         let segments = take(&mut self.segments);
-        self.segments = segments.into_iter()
-            .filter_map(|(i, mut v)| if let Some(vo) = other.segments.find_exact(&i) {
-                v.restore(vo.value());
-                Some((i, v))
-            } else {
-                None
+        self.segments = segments
+            .into_iter(..)
+            .filter_map(|(i, mut v)| {
+                if let Some(vo) = other.segments.get(i.clone()) {
+                    v.restore(vo);
+                    Some((i, v))
+                } else {
+                    None
+                }
             })
             .collect();
     }
@@ -521,7 +643,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
         let n = values.len();
 
         self.with_flat(address, n, |inner, address, _size| {
-            inner.get_values(address, values).map_err(|e| Error::backing(address, e))
+            inner
+                .get_values(address, values)
+                .map_err(|e| Error::backing(address, e))
         })
     }
 
@@ -531,7 +655,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
     {
         let address = address.into();
         self.with_flat(address, n, |inner, address, n| {
-            inner.view_values(address, n).map_err(|e| Error::backing(address, e))
+            inner
+                .view_values(address, n)
+                .map_err(|e| Error::backing(address, e))
         })
     }
 
@@ -541,7 +667,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
     {
         let address = address.into();
         self.with_flat_mut(address, n, |inner, address, n| {
-            inner.view_values_mut(address, n).map_err(|e| Error::backing(address, e))
+            inner
+                .view_values_mut(address, n)
+                .map_err(|e| Error::backing(address, e))
         })
     }
 
@@ -552,7 +680,9 @@ impl<V: StateValue> StateOps for PagedState<V> {
         let address = address.into();
         let n = values.len();
         self.with_flat_mut(address, n, |inner, address, _size| {
-            inner.set_values(address, values).map_err(|e| Error::backing(address, e))
+            inner
+                .set_values(address, values)
+                .map_err(|e| Error::backing(address, e))
         })
     }
 
