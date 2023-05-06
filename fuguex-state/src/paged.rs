@@ -263,7 +263,7 @@ impl<T: StateValue> PagedState<T> {
     where S: AsRef<str>,
           A: Into<Address> {
         let base_address = base_address.into();
-        let range = base_address..=(base_address + size); // TODO: error for zero-size
+        let range = base_address..=(base_address + size - 1usize); // TODO: error for zero-size
 
         if self.segments.overlaps(range.clone()) {
             return Err(Error::OverlappedMapping {
