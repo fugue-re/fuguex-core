@@ -4,10 +4,12 @@ version = "0.2.19"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
 
 [dependencies]
-fugue = { version = "0.2", registry = "fugue", default-features = false }
-fuguex-state-derive = { path = "../fuguex-state-derive", version = "0.2", registry = "fugue" }
+fugue = { version = "0.2", default-features = false }
+fuguex-state-derive = { path = "../fuguex-state-derive", version = "0.2" }
 iset = "0.2"
 log = "0.4"
 paste = "1"
