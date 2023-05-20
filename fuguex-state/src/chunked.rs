@@ -305,6 +305,7 @@ impl<T: StateValue> ChunkState<T> {
         let address = self.base_address + offset;
 
         // set R/W permissions
+        /*
         self.backing.permissions_mut().set_region(
             &Address::from(offset as u64),
             size,
@@ -313,6 +314,7 @@ impl<T: StateValue> ChunkState<T> {
         self.backing
             .permissions_mut()
             .clear_byte(&(Address::from(offset as u64) + size), Access::Write);
+        */
 
         // update region mappings
         self.regions.insert(address..address + size);
@@ -347,6 +349,7 @@ impl<T: StateValue> ChunkState<T> {
         let old_offset = address - self.base_address;
         let old_size = interval.end - interval.start;
 
+        /*
         if !self
             .backing
             .permissions()
@@ -358,6 +361,7 @@ impl<T: StateValue> ChunkState<T> {
                 size,
             }));
         }
+        */
 
         // size + 1 to use the last byte as a red-zone
         let (offset, _old_size) = self
@@ -367,6 +371,7 @@ impl<T: StateValue> ChunkState<T> {
 
         let new_address = self.base_address + offset;
 
+        /*
         // set R/W permissions
         self.backing.permissions_mut().set_region(
             &Address::from(offset as u64),
@@ -376,6 +381,7 @@ impl<T: StateValue> ChunkState<T> {
         self.backing
             .permissions_mut()
             .clear_byte(&(Address::from(offset as u64) + size), Access::Write);
+        */
 
         // copy if moved
         let offset = Address::from(offset as u64);
@@ -384,11 +390,13 @@ impl<T: StateValue> ChunkState<T> {
                 .copy_values(old_offset, offset, old_size.into())
                 .map_err(Error::Backing)?;
 
+            /*
             self.backing.permissions_mut().clear_region(
                 &old_offset,
                 old_size.into(),
                 Access::Write,
             );
+            */
         }
 
         // update region mappings
@@ -419,11 +427,13 @@ impl<T: StateValue> ChunkState<T> {
             .deallocate(offset.into())
             .ok_or_else(|| Error::FreeUnmanaged(address))?;
 
+        /*
         let size = usize::from(interval.end - interval.start);
 
         self.backing
             .permissions_mut()
             .clear_region(&offset, size, flat::Access::Write);
+        */
 
         self.regions.remove(interval);
 

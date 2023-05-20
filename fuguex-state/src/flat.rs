@@ -22,7 +22,7 @@ pub enum Error {
 pub struct FlatState<T: StateValue> {
     backing: Vec<T>,
     dirty: DirtyBacking,
-    permissions: Permissions,
+    //permissions: Permissions,
     space: Arc<AddressSpace>,
 }
 
@@ -45,7 +45,7 @@ impl<T: StateValue> FlatState<T> {
         Self {
             backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new(space.clone(), size),
+            //permissions: Permissions::new(space.clone(), size),
             space,
         }
     }
@@ -54,7 +54,7 @@ impl<T: StateValue> FlatState<T> {
         Self {
             backing: vec![T::default(); size],
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new_with(space.clone(), size, PERM_READ_MASK),
+            //permissions: Permissions::new_with(space.clone(), size, PERM_READ_MASK),
             space,
         }
     }
@@ -64,11 +64,12 @@ impl<T: StateValue> FlatState<T> {
         Self {
             backing: values,
             dirty: DirtyBacking::new(size),
-            permissions: Permissions::new(space.clone(), size),
+            //permissions: Permissions::new(space.clone(), size),
             space,
         }
     }
 
+    /*
     pub fn permissions(&self) -> &Permissions {
         &self.permissions
     }
@@ -76,6 +77,7 @@ impl<T: StateValue> FlatState<T> {
     pub fn permissions_mut(&mut self) -> &mut Permissions {
         &mut self.permissions
     }
+    */
 
     pub fn address_space(&self) -> Arc<AddressSpace> {
         self.space.clone()
@@ -93,7 +95,7 @@ impl<V: StateValue> State for FlatState<V> {
         Self {
             backing: self.backing.clone(),
             dirty: self.dirty.fork(),
-            permissions: self.permissions.clone(),
+            //permissions: self.permissions.clone(),
             space: self.space.clone(),
         }
     }
@@ -108,7 +110,7 @@ impl<V: StateValue> State for FlatState<V> {
             self.dirty.bitsmap[block.index()] = 0;
             self.backing[start..real_end].clone_from_slice(&other.backing[start..real_end]);
         }
-        self.permissions.restore(&other.permissions);
+        //self.permissions.restore(&other.permissions);
         self.dirty.clone_from(&other.dirty);
     }
 }
@@ -136,6 +138,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_readable(&from, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), from.into()),
@@ -143,6 +146,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::Read,
             })
         }
+        */
 
         if doff > self.len() || doff.checked_add(size).is_none() || doff + size > self.len() {
             return Err(Error::OOBWrite {
@@ -151,6 +155,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_writable(&to, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), to.into()),
@@ -158,6 +163,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::Write,
             })
         }
+        */
 
         if doff == soff {
             return Ok(())
@@ -208,6 +214,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), address.into()),
@@ -215,6 +222,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::Read,
             })
         }
+        */
 
         let end = end.unwrap();
 
@@ -236,6 +244,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_readable(&address, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), address.into()),
@@ -243,6 +252,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::Read,
             })
         }
+        */
 
         let end = end.unwrap();
 
@@ -262,6 +272,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_readable_and_writable(&address, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), address.into()),
@@ -269,6 +280,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::ReadWrite,
             })
         }
+        */
 
         let end = end.unwrap();
 
@@ -291,6 +303,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
             });
         }
 
+        /*
         if !self.permissions.all_writable(&address, size) {
             return Err(Error::AccessViolation {
                 address: AddressValue::new(self.space.clone(), address.into()),
@@ -298,6 +311,7 @@ impl<V: StateValue> StateOps for FlatState<V> {
                 access: Access::Write,
             })
         }
+        */
 
         let end = end.unwrap();
 
