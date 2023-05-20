@@ -1,10 +1,10 @@
-use fugue::ir::{Address, AddressSpace, AddressValue};
+use fugue::ir::{Address, AddressSpace};
 
 use iset::IntervalSet;
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::flat::{self, Access, FlatState};
+use crate::flat::{self, FlatState};
 use crate::traits::{State, StateOps, StateValue};
 
 #[derive(Debug, Error)]
