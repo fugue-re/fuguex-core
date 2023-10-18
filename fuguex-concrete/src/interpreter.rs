@@ -1495,6 +1495,19 @@ impl<O: Order, R: Clone + Default + 'static, const OPERAND_SIZE: usize> Interpre
         )
     }
 
+    fn lz_count(
+        &mut self,
+        destination: &Operand,
+        operand: &Operand,
+    ) -> Result<Outcome<R>, Self::Error> {
+        self.lift_int1(
+            |u| Ok(BitVec::from(u.count_leading_zeros())),
+            destination,
+            operand,
+            false,
+        )
+    }
+
     fn intrinsic(
         &mut self,
         name: &str,
