@@ -1,5 +1,6 @@
 use fugue::ir::{Address, AddressSpace};
 
+use std::mem::take;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -591,11 +592,17 @@ impl<V: StateValue> State for PagedState<V> {
     fn restore(&mut self, other: &Self) {
         self.inner.restore(&other.inner);
 
-        for (i, v) in self.segments.unsorted_iter_mut() {
-            if let Some(vo) = other.segments.get(i.clone()) {
-                v.restore(vo);
-            }
-        }
+        self.segments = take(&mut self.segments)
+            .unsorted_into_iter()
+            .filter_map(|(i, mut v)| {
+                if let Some(vo) = other.segments.get(i.clone()) {
+                    v.restore(vo);
+                    Some((i, v))
+                } else {
+                    None
+                }
+            })
+            .collect();
     }
 }
 
