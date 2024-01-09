@@ -1,6 +1,5 @@
 use fugue::ir::{Address, AddressSpace};
 
-use std::mem::take;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -508,10 +507,7 @@ impl<T: StateValue> PagedState<T> {
     {
         let address = address.into();
         if address + 1usize < address {
-            return Err(Error::UnmappedAddress {
-                address,
-                size: 1,
-            });
+            return Err(Error::UnmappedAddress { address, size: 1 });
         }
         if let Some((interval, value)) = self.segments.overlap(address).next() {
             match value {
@@ -528,8 +524,7 @@ impl<T: StateValue> PagedState<T> {
                     )
                 }
                 Segment::StaticMapping { ref backing, .. } => {
-                    let max_access_size =
-                        usize::from(interval.end - interval.start);
+                    let max_access_size = usize::from(interval.end - interval.start);
                     let address = address - interval.start;
 
                     let access_size = max_access_size - usize::from(address);
@@ -537,8 +532,7 @@ impl<T: StateValue> PagedState<T> {
                     f(backing, address, access_size)
                 }
                 Segment::Static { offset, .. } => {
-                    let max_access_size =
-                        usize::from(interval.end - interval.start);
+                    let max_access_size = usize::from(interval.end - interval.start);
                     let offset_in = address - interval.start;
 
                     let address = offset_in + *offset;
@@ -597,18 +591,11 @@ impl<V: StateValue> State for PagedState<V> {
     fn restore(&mut self, other: &Self) {
         self.inner.restore(&other.inner);
 
-        let segments = take(&mut self.segments);
-        self.segments = segments
-            .into_iter(..)
-            .filter_map(|(i, mut v)| {
-                if let Some(vo) = other.segments.get(i.clone()) {
-                    v.restore(vo);
-                    Some((i, v))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        for (i, v) in self.segments.unsorted_iter_mut() {
+            if let Some(vo) = other.segments.get(i.clone()) {
+                v.restore(vo);
+            }
+        }
     }
 }
 
